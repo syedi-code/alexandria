@@ -65,7 +65,12 @@ export async function listReadableWorks(
 		Math.max(1, input.limit ?? DEFAULT_READABLE_WORKS_LIMIT),
 		MAX_READABLE_WORKS_LIMIT
 	);
-	const filter = input.filter?.trim();
+	// Each word must appear in the title or the creator, so "Césaire Discourse"
+	// finds a work that no single column contains as a phrase.
+	const terms = (input.filter ?? '')
+		.split(/\s+/)
+		.filter(Boolean)
+		.slice(0, 10);
 
 	const { results } = await db
 		.prepare(
@@ -73,9 +78,9 @@ export async function listReadableWorks(
 			     SELECT w.id FROM works w
 			      WHERE w.deleted_at IS NULL
 			        AND EXISTS (SELECT 1 FROM documents d WHERE d.work_id = w.id)
-			        ${filter ? `AND (w.title LIKE ?1 OR w.creator LIKE ?1)` : ''}
+			        ${terms.map(() => `AND (w.title LIKE ? OR w.creator LIKE ?)`).join(' ')}
 			      ORDER BY LOWER(w.creator), LOWER(w.title)
-			      LIMIT ${filter ? '?2' : '?1'}
+			      LIMIT ?
 			 )
 			 SELECT w.id AS work_id, w.title, w.creator, w.originally_published,
 			        d.id AS document_id, d.label, d.page_count, d.page_offset,
@@ -89,7 +94,7 @@ export async function listReadableWorks(
 			   JOIN documents d ON d.work_id = w.id
 			  ORDER BY LOWER(w.creator), LOWER(w.title), d.is_primary DESC, d.created_at`
 		)
-		.bind(...(filter ? [`%${filter}%`, limit] : [limit]))
+		.bind(...terms.flatMap((t) => [`%${t}%`, `%${t}%`]), limit)
 		.all<Row>();
 
 	const works = new Map<string, WorkSummary>();

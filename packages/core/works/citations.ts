@@ -20,17 +20,27 @@ const LIGATURES: Record<string, string> = { œ: 'oe', æ: 'ae', ß: 'ss' };
 /**
  * Reduces text to lowercase words, so a quote matches its page whatever the
  * PDF did to diacritics, ligatures, quote marks, dashes, line breaks and
- * hyphenation. Hyphens are removed rather than spaced, which makes
- * `self- deception` (a line break) and `self-deception` the same word.
+ * hyphenation.
+ *
+ * A hyphen between letters is ambiguous. Joined, `self- deception` (a line
+ * break) and `self-deception` are the same word; but a dash that extraction
+ * turned into a hyphen, `rationalism-their`, needs splitting instead. Quotes
+ * are checked both ways.
  */
-export function normalizeForMatching(text: string): string {
+export function normalizeForMatching(
+	text: string,
+	hyphens: 'join' | 'split' = 'join'
+): string {
 	return text
 		.toLowerCase()
 		.replace(/[œæß]/g, (ligature) => LIGATURES[ligature])
 		.normalize('NFKD')
 		.replace(/\p{M}+/gu, '')
 		.replace(/\u00AD/g, '')
-		.replace(/(\p{L})[-‐‑]\s*(\p{L})/gu, '$1$2')
+		.replace(
+			/(\p{L})[-‐‑]\s*(\p{L})/gu,
+			hyphens === 'join' ? '$1$2' : '$1 $2'
+		)
 		.replace(/[^\p{L}\p{N}]+/gu, ' ')
 		.trim();
 }
@@ -55,8 +65,43 @@ function acrossPageBreak(page: string, next: string): string {
 	].join('\n');
 }
 
-const contains = (haystack: string, needle: string) =>
-	` ${normalizeForMatching(haystack)} `.includes(` ${needle} `);
+/** Scholarly quotation leaves words out: `each of these gentlemen... claims that`. */
+const ELLIPSIS = /(?:\s*\.){3}|…/;
+
+/** A fragment between ellipses shorter than this matches too much text to count. */
+const MIN_ELIDED_PART_WORDS = 3;
+
+const wordCount = (normalized: string) =>
+	normalized.split(' ').filter(Boolean).length;
+
+/** Whether the quote is on the page — or, if it elides words, each part of it, in order. */
+function contains(haystack: string, quote: string): boolean {
+	for (const hyphens of ['join', 'split'] as const) {
+		const page = ` ${normalizeForMatching(haystack, hyphens)} `;
+		if (page.includes(` ${normalizeForMatching(quote, hyphens)} `)) {
+			return true;
+		}
+
+		const parts = quote
+			.split(ELLIPSIS)
+			.map((part) => normalizeForMatching(part, hyphens))
+			.filter(Boolean);
+		if (
+			parts.length < 2 ||
+			parts.some((part) => wordCount(part) < MIN_ELIDED_PART_WORDS)
+		) {
+			continue;
+		}
+		let from = 0;
+		const inOrder = parts.every((part) => {
+			const at = page.indexOf(` ${part} `, from);
+			from = at + part.length + 1;
+			return at !== -1;
+		});
+		if (inOrder) return true;
+	}
+	return false;
+}
 
 export function checkQuote(
 	quote: string,
@@ -68,15 +113,14 @@ export function checkQuote(
 		return { status: 'unverifiable', reason: 'no_text_layer' };
 	}
 
-	const needle = normalizeForMatching(quote);
-	if (needle.split(' ').filter(Boolean).length < MIN_QUOTE_WORDS) {
+	if (wordCount(normalizeForMatching(quote)) < MIN_QUOTE_WORDS) {
 		return { status: 'unverified', reason: 'quote_too_short' };
 	}
 
-	if (contains(page.text, needle)) {
+	if (contains(page.text, quote)) {
 		return { status: 'verified', matched: [page.ref] };
 	}
-	if (next?.text && contains(acrossPageBreak(page.text, next.text), needle)) {
+	if (next?.text && contains(acrossPageBreak(page.text, next.text), quote)) {
 		return { status: 'verified', matched: [page.ref, next.ref] };
 	}
 	return { status: 'unverified', reason: 'not_found' };

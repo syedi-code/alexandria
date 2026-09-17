@@ -240,6 +240,31 @@ describe('answer citations', () => {
 		]);
 	});
 
+	it('may quote a quotation', () => {
+		expect(
+			parseCitations(
+				'Descartes [P1 "the charter of universalism, that "reason . . . is found whole""] and [P2 "next"].'
+			)
+		).toEqual([
+			{
+				handle: 'P1',
+				quote: 'the charter of universalism, that "reason . . . is found whole"',
+			},
+			{ handle: 'P2', quote: 'next' },
+		]);
+	});
+
+	it('are found when the quote comes before a bare handle', () => {
+		expect(
+			parseCitations(
+				'He calls it "the charter of universalism" [P1], and later “a second quote” [P3]; "not cited" P4.'
+			)
+		).toEqual([
+			{ handle: 'P1', quote: 'the charter of universalism' },
+			{ handle: 'P3', quote: 'a second quote' },
+		]);
+	});
+
 	it('are verified against the page their handle names', async () => {
 		const handles = new PageHandles();
 		handles.handleFor({ document_id: documentId, page_no: 1 });

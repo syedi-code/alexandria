@@ -1,9 +1,11 @@
 import {
+	APICallError,
 	convertToModelMessages,
 	createUIMessageStream,
 	createUIMessageStreamResponse,
 	generateText,
 	isStepCount,
+	RetryError,
 	streamText,
 	type LanguageModel,
 	type LanguageModelUsage,
@@ -43,6 +45,32 @@ export interface Turn {
 	titleModel?: LanguageModel;
 	waitUntil(promise: Promise<unknown>): void;
 }
+
+/**
+ * What the reader is told when an answer fails. Provider messages are not
+ * passed through; the few failures a reader can act on, or wait out, are named.
+ */
+export function describeFailure(error: unknown): string {
+	const cause = RetryError.isInstance(error) ? error.lastError : error;
+	if (APICallError.isInstance(cause)) {
+		const { statusCode = 0, responseBody = '' } = cause;
+		if (/credit balance|insufficient_quota|billing/i.test(responseBody))
+			return "Scribe's model provider account is out of credit.";
+		if (statusCode === 401 || statusCode === 403)
+			return "Scribe's model provider rejected its API key.";
+		if (statusCode === 429)
+			return 'The model is receiving too many requests. Try again in a minute.';
+		if (statusCode >= 500)
+			return 'The model provider is unavailable right now. Try again shortly.';
+	}
+	return 'Scribe could not finish this answer.';
+}
+
+/** A message with nothing but step boundaries in it: the model failed before saying anything. */
+const isEmpty = (message: ChatMessage) =>
+	message.parts.every(
+		(part) => (part as { type: string }).type === 'step-start'
+	);
 
 async function drain(stream: ReadableStream<unknown>): Promise<void> {
 	const reader = stream.getReader();
@@ -100,6 +128,7 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 
 	let citations: AnswerCitation[] = [];
 	let usage: LanguageModelUsage | undefined;
+	let failed = false;
 
 	const stream = createUIMessageStream<ScribeMessage>({
 		originalMessages: messages,
@@ -115,9 +144,16 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 
 			for await (const chunk of result.toUIMessageStream<ScribeMessage>({
 				sendFinish: false,
+				onError: (error) => {
+					failed = true;
+					console.error('[chat] model failed:', error);
+					return describeFailure(error);
+				},
 			})) {
 				writer.write(chunk);
 			}
+			// The error is already in the stream; awaiting results would raise it again.
+			if (failed) return;
 
 			const steps = await result.steps;
 			citations = await verifyAnswer(
@@ -137,6 +173,7 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 			});
 		},
 		onEnd: async ({ responseMessage }) => {
+			if (isEmpty(responseMessage)) return;
 			await saveMessage(works.db, {
 				conversationId: conversation.id,
 				message: responseMessage,
@@ -148,13 +185,13 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 				},
 				citations,
 			});
-			if (!conversation.title && history.length === 0) {
+			if (!failed && !conversation.title && history.length === 0) {
 				turn.waitUntil(nameConversation(turn).catch(console.error));
 			}
 		},
 		onError: (error) => {
 			console.error('[chat] turn failed:', error);
-			return 'Scribe could not finish this answer.';
+			return describeFailure(error);
 		},
 	});
 
