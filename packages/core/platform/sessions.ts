@@ -88,6 +88,42 @@ export async function getSessionByToken(
 }
 
 /**
+ * `expires_at` is written in two shapes: an ISO string by `createSession`, and
+ * SQLite's `YYYY-MM-DD HH:MM:SS` by `extendSession`, which names no zone but is
+ * always UTC. `Date.parse` reads the second as local time, so the zone is made
+ * explicit rather than trusted.
+ */
+function expiryMs(expiresAt: string): number {
+	const normalised = expiresAt.includes('T')
+		? expiresAt
+		: `${expiresAt.replace(' ', 'T')}Z`;
+	return Date.parse(normalised);
+}
+
+/**
+ * Whether the sliding window is worth a write.
+ *
+ * Extending on every request cost one D1 row write per request, which is what
+ * exhausted the account's daily write budget and took every route down with it
+ * — reading the notes list should not spend write quota. A session is bumped
+ * only once it is past halfway through its duration, which keeps the window
+ * sliding while turning a write per request into a write per half-duration.
+ *
+ * An unreadable expiry extends, so a parsing fault logs nobody out.
+ */
+export function sessionNeedsExtending(
+	expiresAt: string,
+	durationHours?: number,
+	now: number = Date.now()
+): boolean {
+	const expiry = expiryMs(expiresAt);
+	if (!Number.isFinite(expiry)) return true;
+	const halfWindowMs =
+		(sessionDurationHours(durationHours) * 60 * 60 * 1000) / 2;
+	return expiry - now <= halfWindowMs;
+}
+
+/**
  * Extend a session's expiry (sliding window).
  */
 export async function extendSession(

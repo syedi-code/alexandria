@@ -10,6 +10,7 @@ import { getCookie } from 'hono/cookie';
 import {
 	getSessionByToken,
 	extendSession,
+	sessionNeedsExtending,
 	sessionDurationHours,
 } from '@alexandria/core';
 import { hasValidFileSignature } from './platform/file-access.js';
@@ -156,11 +157,20 @@ export function sessionMiddleware(): MiddlewareHandler<AppEnv> {
 			);
 		}
 
-		// Sliding window: extend expiry on every successful request
+		// Sliding window, but only once the session is past halfway: a write on
+		// every request is what exhausted D1's daily row budget. The bump is also
+		// not worth the request — the session is already valid, so a D1 that
+		// refuses the write degrades the window instead of 500ing a read.
 		const durationHours = sessionDurationHours(
 			c.env.SESSION_DURATION_HOURS
 		);
-		await extendSession(c.env.DB, sessionToken, durationHours);
+		if (sessionNeedsExtending(session.expires_at, durationHours)) {
+			try {
+				await extendSession(c.env.DB, sessionToken, durationHours);
+			} catch (error) {
+				console.error('[auth] session extend failed', error);
+			}
+		}
 
 		c.set('authContext', {
 			user: { id: session.user_id, email: session.email },
