@@ -25,8 +25,10 @@ export const WELCOME_NOTES: NoteInput[] = [
 
 export const WELCOME_QUOTES: QuoteInput[] = [
 	{
-		quote: 'The only way to do great work is to love what you do.',
-		creator: 'Steve Jobs',
+		quote: 'Of all that is written, I love only what a person has written with his blood.',
+		creator: 'Friedrich Nietzsche',
+		work: 'Thus Spoke Zarathustra',
+		kind: 'book',
 		source: 'system',
 	},
 ];
