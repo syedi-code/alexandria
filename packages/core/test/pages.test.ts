@@ -335,9 +335,19 @@ describe('citation verification', () => {
 		expect(
 			await verifyCitation(db.d1, {
 				ref: ref(4),
-				quote: 'Granted that we want the truth: why not rather beauty?',
+				quote: 'A sentence appearing nowhere in this book at all',
 			})
 		).toEqual({ status: 'unverified', reason: 'not_found' });
+	});
+
+	it('says where a quote stopped matching, without saying whose fault it is', async () => {
+		// The page says "why not rather untruth?".
+		expect(
+			await verifyCitation(db.d1, {
+				ref: ref(4),
+				quote: 'Granted that we want the truth: why not rather beauty?',
+			})
+		).toEqual({ status: 'unverified', reason: 'partial_match' });
 	});
 
 	it('does not accept a quote too short to be evidence', async () => {
@@ -408,6 +418,30 @@ describe('citation verification', () => {
 		expect(
 			status('each of these gentlemen... claims that his own is sound')
 		).toBe('unverified');
+	});
+
+	it('reports a quote broken by a scanning error as a partial match', () => {
+		// "forms" came out of the scanner as "lOrms", mid-quote.
+		const page = onPage(
+			[
+				'there may be degrees in respect of their accidental qualities, but not in of their',
+				'I: ,,7',
+				'lOrms, or natures.',
+			].join('\n')
+		);
+		const reason = (quote: string) => {
+			const check = checkQuote(quote, page);
+			return 'reason' in check ? check.reason : check.status;
+		};
+
+		expect(
+			reason(
+				'there may be degrees in respect of their accidental qualities, but not in of their forms, or natures'
+			)
+		).toBe('partial_match');
+		expect(
+			reason('a sentence that has nothing to do with this page at all')
+		).toBe('not_found');
 	});
 
 	it('does not match inside a longer word', () => {
