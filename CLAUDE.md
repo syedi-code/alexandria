@@ -173,4 +173,5 @@ first.
   not a promotion chain.
 - **Always branch fresh off `main`** for each piece of work, then merge that one
   feature branch into **both** `staging` and `main` via separate PRs.
-  <!-- MANUAL ADDITIONS END -->
+
+<!-- MANUAL ADDITIONS END -->

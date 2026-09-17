@@ -21,7 +21,7 @@ import {
 } from '@alexandria/core/works';
 import { parseRunOptions, runBudgeted } from './run.js';
 import { EXTRACTOR, extractPageTexts } from './pdf-text.js';
-import { downloadObject, query } from './wrangler.js';
+import { downloadObject, query } from '../wrangler.js';
 
 interface Candidate {
 	id: string;

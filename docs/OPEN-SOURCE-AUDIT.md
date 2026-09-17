@@ -18,22 +18,22 @@ vulnerability that publishing the source would have made trivially discoverable.
 
 Severity is about what happens if this is published, not about polish.
 
-| #   | Finding                                                 | Severity | State                |
-| --- | ------------------------------------------------------- | -------- | -------------------- |
-| H1  | Journal dump (2,254 rows) in git history                | Critical | Purged               |
-| H2  | 26 licensed commercial fonts in git history             | High     | Purged               |
-| 1   | `/api/files/*` accepted any value as a signed token     | Critical | Fixed, deployed      |
-| 2   | `LOCAL_DEV` could grant admin on a deployed worker      | High     | Guarded at deploy    |
-| 3   | A real production user id hardcoded in source           | Medium   | Fixed                |
-| 4   | Nine unused secrets live on the production worker       | Medium   | Deleted              |
-| 5   | `SESSION_DURATION_HOURS` interpolated into SQL and Date | Low      | Fixed                |
-| 6   | Personal email address in a migration comment           | Low      | Fixed in tree        |
-| 7   | No `SECURITY.md`, no disclosure path                    | Low      | Fixed                |
-| 8   | `LICENSE` named no copyright holder                     | Low      | Fixed                |
-| 9   | No `.gitattributes`; CRLF churn on Windows              | Low      | Fixed                |
-| 10  | `executeQuery` duplicated in twelve CLI scripts         | Low      | **Documented below** |
-| 11  | 30 files are not Prettier-clean; CI never checks        | Low      | **Documented below** |
-| 12  | `npm run dev:setup` could not build a local database    | Medium   | Fixed                |
+| #   | Finding                                                 | Severity | State             |
+| --- | ------------------------------------------------------- | -------- | ----------------- |
+| H1  | Journal dump (2,254 rows) in git history                | Critical | Purged            |
+| H2  | 26 licensed commercial fonts in git history             | High     | Purged            |
+| 1   | `/api/files/*` accepted any value as a signed token     | Critical | Fixed, deployed   |
+| 2   | `LOCAL_DEV` could grant admin on a deployed worker      | High     | Guarded at deploy |
+| 3   | A real production user id hardcoded in source           | Medium   | Fixed             |
+| 4   | Nine unused secrets live on the production worker       | Medium   | Deleted           |
+| 5   | `SESSION_DURATION_HOURS` interpolated into SQL and Date | Low      | Fixed             |
+| 6   | Personal email address in a migration comment           | Low      | Fixed in tree     |
+| 7   | No `SECURITY.md`, no disclosure path                    | Low      | Fixed             |
+| 8   | `LICENSE` named no copyright holder                     | Low      | Fixed             |
+| 9   | No `.gitattributes`; CRLF churn on Windows              | Low      | Fixed             |
+| 10  | `executeQuery` duplicated in twelve CLI scripts         | Low      | Fixed             |
+| 11  | 30 files are not Prettier-clean; CI never checks        | Low      | Fixed             |
+| 12  | `npm run dev:setup` could not build a local database    | Medium   | Fixed             |
 
 ---
 
@@ -201,29 +201,44 @@ call sites, and the value is now bound rather than interpolated.
     That is the one-off cost of adding `.gitattributes` to a repo that never had
     one, and it does not recur.
 
-### 10. `executeQuery` duplicated across twelve CLI scripts — Low
+### 10. `executeQuery` duplicated across twelve CLI scripts — Fixed
 
 `cli/db/cleanup-quote-versions.ts`, `db-metadata.ts`, `migrate-events.ts`,
 `ingest/enrich-all.ts`, the seven `utils/extract-*.ts`, and
 `utils/seed-book-relationships.ts` each carry a private copy of the same helper:
 `exec()` with the SQL interpolated into a shell string.
 
-`cli/ingest/wrangler.ts` is the better implementation already in the repo — it
+`cli/ingest/wrangler.ts` was the better implementation already in the repo — it
 runs wrangler's entry script through `execFile` with no shell, so SQL reaches
 wrangler verbatim on every platform. The twelve should collapse into it.
 
-I did not do it in this pass. Each of those scripts talks to a live database,
-several of them write, and a mechanical sweep I could only partially exercise is
-a poor trade against duplication that is merely untidy. The seven extract
-scripts are the safe subset — `npm run extract:all` exercises all of them
-read-only in one command — and are the place to start.
+**Done in a later pass.** `wrangler.ts` moved up to `cli/wrangler.ts`, since it
+is no longer only the ingest pipeline's, and every script now calls its `query`,
+`executeSqlFile` and `exportDatabase`. One environment table, one way to reach
+D1, and no SQL built into a shell string anywhere: about 1,300 lines of
+duplication gone.
 
-What I did do is fix the part that actually cost something: a failed wrangler
-call rejected with a spawn error whose Windows stderr is a libuv assertion,
-burying the Cloudflare API message inside a stringified `stdout`. `wrangler.ts`
-now throws the API's own message.
+Three scripts were deleted rather than converted, because they could no longer
+run: `utils/seed-authors.ts` and `utils/seed-book-relationships.ts` read and
+wrote `books` and `authors`, which `0026_works.sql` dropped, and
+`ingest/enrich-all.ts` wanted a Neon connection string that no longer exists.
+The first two also assigned author ids — the kind of thing that should not be
+left lying around a repository where **Never remap a UUID** is a rule.
 
-### 11. The repository is not Prettier-clean — Low
+Two bugs surfaced in the sweep. `db-metadata.ts` swallowed every query error and
+reported the empty result, so its book count had been reading `books` and
+printing 0 since the migration. `debug/verify-auth.ts` still pointed at two
+`pages.dev` hostnames that were never this worker's.
+
+`cli/` is now in the root `tsconfig.json`, so CI typechecks it like everything
+else; it had two errors nobody could see.
+
+The original fix in the first pass remains: a failed wrangler call rejected with
+a spawn error whose Windows stderr is a libuv assertion, burying the Cloudflare
+API message inside a stringified `stdout`. `wrangler.ts` throws the API's own
+message.
+
+### 11. The repository is not Prettier-clean — Fixed
 
 `CONTRIBUTING.md` tells a contributor to run `npm run format` before pushing.
 Doing so rewrites **30 files nobody touched** — the spec-kit agent markdown,
@@ -251,6 +266,12 @@ and then a step in `.github/workflows/checks.yml` so it cannot drift again:
 ```yaml
 - run: npx prettier --check .
 ```
+
+**Done in a later pass.** Both, in that order. One file needed a hand: a
+`<!-- MANUAL ADDITIONS END -->` marker indented under a list item in `CLAUDE.md`
+was re-indented by every `--write` and rejected by every `--check`, so
+`npm run format` never reached a fixed point. The marker sits at the left margin
+now.
 
 ### 12. `npm run dev:setup` could not build a local database — Medium
 

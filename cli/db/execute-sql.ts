@@ -22,27 +22,18 @@ import 'dotenv/config';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve, basename, isAbsolute } from 'node:path';
 import { createInterface } from 'node:readline';
+import { writeFileSync } from 'node:fs';
+import {
+	ENVIRONMENTS,
+	executeSqlFile,
+	isEnvironment,
+	query,
+	type Environment,
+} from '../wrangler.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
-
-const ENV_CONFIG = {
-	local: {
-		database: 'antisocial-media',
-		flags: '--local',
-	},
-	staging: {
-		database: 'antisocial-media-staging',
-		flags: '--env staging --remote',
-	},
-	production: {
-		database: 'antisocial-media',
-		flags: '--remote',
-	},
-} as const;
-
-type Environment = keyof typeof ENV_CONFIG;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -143,11 +134,7 @@ async function main(): Promise<void> {
 		const arg = args[i];
 		if (arg === '--env' && args[i + 1]) {
 			const envArg = args[++i];
-			if (
-				envArg === 'local' ||
-				envArg === 'staging' ||
-				envArg === 'production'
-			) {
+			if (isEnvironment(envArg)) {
 				env = envArg;
 			} else {
 				console.error(`❌ Invalid environment: ${envArg}`);
@@ -182,6 +169,7 @@ async function main(): Promise<void> {
 	}
 
 	// Resolve SQL file path
+	const repoRoot = resolve(import.meta.dirname, '..', '..');
 	const resolvedPath = resolveSqlFile(sqlFile);
 	if (!resolvedPath) {
 		console.error(`❌ SQL file not found: ${sqlFile}`);
@@ -190,9 +178,6 @@ async function main(): Promise<void> {
 		console.error(`   - ${resolve(process.cwd(), 'migrations', sqlFile)}`);
 		process.exit(1);
 	}
-
-	// Get environment config
-	const config = ENV_CONFIG[env];
 
 	// Show what we're about to do
 	console.log('');
@@ -206,7 +191,7 @@ async function main(): Promise<void> {
 		'├─────────────────────────────────────────────────────────────┤'
 	);
 	console.log(`│  Environment: ${env.toUpperCase().padEnd(45)}│`);
-	console.log(`│  Database:    ${config.database.padEnd(45)}│`);
+	console.log(`│  Database:    ${ENVIRONMENTS[env].db.padEnd(45)}│`);
 	console.log(`│  File:        ${basename(resolvedPath).padEnd(45)}│`);
 	console.log(
 		'└─────────────────────────────────────────────────────────────┘'
@@ -241,113 +226,38 @@ async function main(): Promise<void> {
 		console.log('');
 	}
 
-	// Build command
-	// We need to run from apps/worker directory for wrangler.toml resolution
-	// Script may run from cli/ dir (workspace) or repo root, so find repo root first
-	const scriptDir = new URL('.', import.meta.url).pathname.replace(
-		/^\/([A-Z]:)/,
-		'$1'
-	); // Fix Windows path
-	const repoRoot = resolve(scriptDir, '..', '..');
-	const workerDir = resolve(repoRoot, 'apps', 'worker');
-	const relativeFilePath = resolve(resolvedPath); // Absolute path works fine
-
-	const command = `npx wrangler d1 execute ${config.database} ${config.flags} --file="${relativeFilePath}"`;
-
 	if (dryRun) {
-		console.log('🔍 Dry run - command that would be executed:');
-		console.log(`   cd ${workerDir}`);
-		console.log(`   ${command}`);
-		console.log('');
+		console.log('Dry run: nothing was executed.');
+		console.log(`   ${resolvedPath} would run against ${env}.`);
 		process.exit(0);
 	}
 
-	// Execute
-	console.log(`⏳ Executing SQL against ${env}...`);
+	console.log(`Executing SQL against ${env}...`);
 	console.log('');
 
-	// Change to worker directory for wrangler.toml resolution
-	const originalCwd = process.cwd();
-	process.chdir(workerDir);
-
 	try {
-		const { execSync } = await import('node:child_process');
-		const { writeFileSync, readFileSync } = await import('node:fs');
-
 		if (outputFile) {
-			// For capturing JSON output, we need to use --command instead of --file
-			// Read the SQL file content and pass it as a command
-			const sqlContent = readFileSync(relativeFilePath, 'utf-8')
-				.replace(/--.*$/gm, '') // Remove SQL comments
-				.replace(/\s+/g, ' ') // Collapse whitespace
-				.trim();
-
-			// Escape double quotes for shell
-			const escapedSql = sqlContent.replace(/"/g, '\\"');
-			const jsonCommand = `npx wrangler d1 execute ${config.database} ${config.flags} --json --command="${escapedSql}"`;
-
-			const output = execSync(jsonCommand, {
-				encoding: 'utf-8',
-				maxBuffer: 50 * 1024 * 1024,
+			// Results only come back from --command; a remote --file goes through
+			// D1's import API, which reports a summary and no rows.
+			const rows = await query(env, 'db', {
+				sql: readFileSync(resolvedPath, 'utf-8').replace(/--.*$/gm, ''),
 			});
-
-			// Parse and format the output
-			try {
-				const parsed = JSON.parse(output);
-				const results = parsed[0]?.results || parsed;
-
-				// Save to file (resolve from repo root, not cli dir)
-				const outputPath = resolve(repoRoot, outputFile);
-				writeFileSync(outputPath, JSON.stringify(results, null, 2));
-				console.log(`📄 Results saved to: ${outputPath}`);
-
-				// Also print a summary to terminal
-				if (Array.isArray(results)) {
-					console.log(`   ${results.length} row(s) returned`);
-					if (results.length > 0 && results.length <= 20) {
-						console.log('');
-						console.table(results);
-					}
-				}
-			} catch {
-				// If parsing fails, save raw output
-				const outputPath = resolve(repoRoot, outputFile);
-				writeFileSync(outputPath, output);
-				console.log(`📄 Raw output saved to: ${outputPath}`);
-			}
+			const outputPath = resolve(repoRoot, outputFile);
+			writeFileSync(outputPath, JSON.stringify(rows, null, 2));
+			console.log(`Results saved to: ${outputPath}`);
+			console.log(`   ${rows.length} row(s) returned`);
+			if (rows.length > 0 && rows.length <= 20) console.table(rows);
 		} else {
-			// Use execSync for simplicity - wrangler output goes directly to terminal
-			// Strip CLOUDFLARE_API_TOKEN so wrangler uses the OAuth session instead
-			// (the .env API token lacks D1 import permissions)
-			const { CLOUDFLARE_API_TOKEN: _, ...cleanEnv } = process.env;
-			execSync(command, {
-				stdio: 'inherit',
-				encoding: 'utf-8',
-				env: {
-					...cleanEnv,
-					WRANGLER_SEND_METRICS: 'false',
-				},
-			});
+			const written = await executeSqlFile(env, 'db', resolvedPath);
+			if (written !== null) console.log(`   ${written} rows written`);
 		}
-
 		console.log('');
-		console.log(`✅ SQL executed successfully on ${env}`);
-	} catch (error: unknown) {
-		const execError = error as {
-			status?: number;
-			message?: string;
-			stderr?: string;
-			stdout?: string;
-		};
+		console.log(`SQL executed successfully on ${env}`);
+	} catch (error) {
 		console.error('');
-		console.error(`❌ Execution failed`);
-		if (execError.stderr) console.error(execError.stderr);
-		if (execError.stdout) console.error(execError.stdout);
-		if (execError.message) console.error(execError.message);
-		process.exit(execError.status ?? 1);
-	} finally {
-		// Restore original cwd
-		process.chdir(originalCwd);
+		console.error('Execution failed');
+		console.error(error instanceof Error ? error.message : error);
+		process.exit(1);
 	}
 }
 

@@ -17,29 +17,20 @@
  */
 
 import 'dotenv/config';
-import { exec } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { promisify } from 'node:util';
-
-const execAsync = promisify(exec);
+import {
+	ENVIRONMENTS,
+	exportDatabase,
+	isEnvironment,
+	type Environment,
+} from '../wrangler.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ENV_CONFIG = {
-	staging: {
-		database: 'antisocial-media-staging',
-	},
-	production: {
-		database: 'antisocial-media',
-	},
-} as const;
-
-type Environment = keyof typeof ENV_CONFIG;
-
-const BACKUP_DIR = resolve(process.cwd(), '..', 'sql', 'backups');
+const BACKUP_DIR = resolve(import.meta.dirname, '..', '..', 'sql', 'backups');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -76,7 +67,7 @@ function parseArgs(): { env: Environment } | null {
 		return null;
 	}
 
-	if (!(env in ENV_CONFIG)) {
+	if (!isEnvironment(env) || env === 'local') {
 		console.error(
 			`Error: Invalid environment "${env}". Must be: staging, production\n`
 		);
@@ -84,7 +75,7 @@ function parseArgs(): { env: Environment } | null {
 		return null;
 	}
 
-	return { env: env as Environment };
+	return { env };
 }
 
 function getTimestamp(): string {
@@ -110,7 +101,6 @@ async function main(): Promise<void> {
 	}
 
 	const { env } = parsed;
-	const config = ENV_CONFIG[env];
 	const timestamp = getTimestamp();
 	const filename = `backup-${env}-${timestamp}.sql`;
 
@@ -121,33 +111,20 @@ async function main(): Promise<void> {
 	console.log(`\n🗄️  D1 Backup Tool`);
 	console.log(`─────────────────────────────────────────`);
 	console.log(`   Environment: ${env}`);
-	console.log(`   Database:    ${config.database}`);
+	console.log(`   Database:    ${ENVIRONMENTS[env].db}`);
 	console.log(`   Output:      ${outputPath}`);
 	console.log(`─────────────────────────────────────────\n`);
 
-	const command = `npx wrangler d1 export ${config.database} --remote --output="${outputPath}"`;
-
-	console.log(`⏳ Exporting database...`);
+	console.log(`Exporting database...`);
 
 	try {
-		const { stdout, stderr } = await execAsync(command, {
-			cwd: resolve(process.cwd(), '..', 'apps', 'worker'),
-			maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large exports
-			env: {
-				...process.env,
-				CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN,
-			},
-		});
-
-		if (stdout) console.log(stdout);
-		if (stderr && !stderr.includes('Wrangler')) console.error(stderr);
-
-		console.log(`\n✅ Backup complete: ${filename}`);
+		await exportDatabase(env, 'db', outputPath);
+		console.log(`
+Backup complete: ${filename}`);
 	} catch (error) {
-		console.error(`\n❌ Backup failed:`);
-		if (error instanceof Error) {
-			console.error(error.message);
-		}
+		console.error(`
+Backup failed:`);
+		console.error(error instanceof Error ? error.message : error);
 		process.exit(1);
 	}
 }

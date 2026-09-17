@@ -12,7 +12,8 @@ import eslintConfigPrettier from 'eslint-config-prettier';
  * when this is violated — this rule is the only thing holding the seam, and the
  * only thing keeping a future repo split possible. Do not disable it.
  */
-const BOUNDARY = 'The dependency runs one way: writing points at works, works never points back. Import @alexandria/core/works or @alexandria/core/platform — the package root re-exports both domains.';
+const BOUNDARY =
+	'The dependency runs one way: writing points at works, works never points back. Import @alexandria/core/works or @alexandria/core/platform — the package root re-exports both domains.';
 
 /**
  * `paths` matches a module specifier exactly; `patterns` uses gitignore

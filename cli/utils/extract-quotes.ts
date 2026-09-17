@@ -19,12 +19,9 @@
  */
 
 import dotenv from 'dotenv';
-import { exec } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { promisify } from 'node:util';
-
-const execAsync = promisify(exec);
+import { isEnvironment, query, type Environment } from '../wrangler.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -35,26 +32,8 @@ const scriptDir = new URL('.', import.meta.url).pathname.replace(
 	'$1'
 );
 const repoRoot = resolve(scriptDir, '..', '..');
-const workerDir = resolve(repoRoot, 'apps', 'worker');
 
 dotenv.config({ path: resolve(repoRoot, '.env') });
-
-const ENV_CONFIG = {
-	local: {
-		database: 'antisocial-media',
-		flags: '--local',
-	},
-	staging: {
-		database: 'antisocial-media-staging',
-		flags: '--remote',
-	},
-	production: {
-		database: 'antisocial-media',
-		flags: '--remote',
-	},
-} as const;
-
-type Environment = keyof typeof ENV_CONFIG;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -72,8 +51,8 @@ function parseArgs(): Options {
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
 			case '--env': {
-				const env = args[++i] as Environment;
-				if (!['local', 'staging', 'production'].includes(env)) {
+				const env = args[++i];
+				if (!isEnvironment(env)) {
 					console.error(`Invalid environment: ${env}`);
 					console.error('Valid options: local, staging, production');
 					process.exit(1);
@@ -109,29 +88,6 @@ Examples:
 	return options;
 }
 
-interface D1QueryResult<T> {
-	success: boolean;
-	results: T[];
-}
-
-async function executeQuery<T>(
-	database: string,
-	flags: string,
-	query: string
-): Promise<T[]> {
-	const normalizedQuery = query.replace(/\s+/g, ' ').trim();
-	const escapedQuery = normalizedQuery.replace(/"/g, '\\"');
-	const command = `npx wrangler d1 execute ${database} ${flags} --json --command="${escapedQuery}"`;
-
-	const { stdout } = await execAsync(command, {
-		cwd: workerDir,
-		maxBuffer: 50 * 1024 * 1024,
-	});
-
-	const parsed: D1QueryResult<T>[] = JSON.parse(stdout);
-	return parsed[0]?.results || [];
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
@@ -154,26 +110,24 @@ interface QuoteRow {
 
 async function main(): Promise<void> {
 	const { env, json } = parseArgs();
-	const config = ENV_CONFIG[env];
 	const userId = process.env.USER_ID;
 	if (!userId) {
 		console.error('USER_ID environment variable is required');
 		process.exit(1);
 	}
 
-	console.log(`Extracting quotes from ${env} (${config.database})...`);
+	console.log(`Extracting quotes from ${env}...`);
 
-	const results = await executeQuery<QuoteRow>(
-		config.database,
-		config.flags,
-		`
+	const results = await query<QuoteRow>(env, 'db', {
+		sql: `
 		SELECT q.id, q.quote, q.work, q.creator, q.kind, q.book_id, q.page, q.posted, q.tags, q.replaces, q.source, q.created_at, q.updated_at
 		FROM quotes q
-		WHERE q.user_id = '${userId}'
+		WHERE q.user_id = ?
 		  AND q.id NOT IN (SELECT replaces FROM quotes WHERE replaces IS NOT NULL)
 		ORDER BY q.created_at DESC
-		`
-	);
+		`,
+		params: [userId],
+	});
 
 	const outDir = resolve(repoRoot, 'local', 'json');
 	if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });

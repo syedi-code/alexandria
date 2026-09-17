@@ -1,99 +1,99 @@
 name: Deploy to Cloudflare
 description: >-
-  Deploys the worker to one environment. This is the single implementation
-  both Deploy workflows call — a composite action rather than a reusable
-  workflow, so it does not show up as a third entry in the Actions sidebar.
+    Deploys the worker to one environment. This is the single implementation
+    both Deploy workflows call — a composite action rather than a reusable
+    workflow, so it does not show up as a third entry in the Actions sidebar.
 
 inputs:
-  environment:
-    description: 'Target environment: staging | production'
-    required: true
-  api-token:
-    description: Cloudflare API token
-    required: true
-  account-id:
-    description: Cloudflare account id
-    required: true
+    environment:
+        description: 'Target environment: staging | production'
+        required: true
+    api-token:
+        description: Cloudflare API token
+        required: true
+    account-id:
+        description: Cloudflare account id
+        required: true
 
 runs:
-  using: composite
-  steps:
-    # Every command below is the same one you would run by hand, so a failed
-    # deploy can always be reproduced locally.
-    - name: Resolve target
-      id: target
-      shell: bash
-      run: |
-        case "${{ inputs.environment }}" in
-          production)
-            echo "worker_args=--config wrangler.toml"            >> "$GITHUB_OUTPUT"
-            echo "worker_name=antisocial-worker"                 >> "$GITHUB_OUTPUT"
-            echo "schema_check=assert:migrated:prod"             >> "$GITHUB_OUTPUT"
-            echo "safety_check=assert:deployable:prod"           >> "$GITHUB_OUTPUT"
-            echo "site=https://alexandria.socialeating.studio"   >> "$GITHUB_OUTPUT"
-            ;;
-          staging)
-            echo "worker_args=--config wrangler.toml --env staging"               >> "$GITHUB_OUTPUT"
-            echo "worker_name=antisocial-worker-staging"                          >> "$GITHUB_OUTPUT"
-            echo "schema_check=assert:migrated:staging"                           >> "$GITHUB_OUTPUT"
-            echo "safety_check=assert:deployable:staging"                         >> "$GITHUB_OUTPUT"
-            echo "site=https://antisocial-worker-staging.iysyed01.workers.dev"    >> "$GITHUB_OUTPUT"
-            ;;
-          *)
-            echo "::error::Unknown environment '${{ inputs.environment }}' (expected staging or production)"
-            exit 1
-            ;;
-        esac
+    using: composite
+    steps:
+        # Every command below is the same one you would run by hand, so a failed
+        # deploy can always be reproduced locally.
+        - name: Resolve target
+          id: target
+          shell: bash
+          run: |
+              case "${{ inputs.environment }}" in
+                production)
+                  echo "worker_args=--config wrangler.toml"            >> "$GITHUB_OUTPUT"
+                  echo "worker_name=antisocial-worker"                 >> "$GITHUB_OUTPUT"
+                  echo "schema_check=assert:migrated:prod"             >> "$GITHUB_OUTPUT"
+                  echo "safety_check=assert:deployable:prod"           >> "$GITHUB_OUTPUT"
+                  echo "site=https://alexandria.socialeating.studio"   >> "$GITHUB_OUTPUT"
+                  ;;
+                staging)
+                  echo "worker_args=--config wrangler.toml --env staging"               >> "$GITHUB_OUTPUT"
+                  echo "worker_name=antisocial-worker-staging"                          >> "$GITHUB_OUTPUT"
+                  echo "schema_check=assert:migrated:staging"                           >> "$GITHUB_OUTPUT"
+                  echo "safety_check=assert:deployable:staging"                         >> "$GITHUB_OUTPUT"
+                  echo "site=https://antisocial-worker-staging.iysyed01.workers.dev"    >> "$GITHUB_OUTPUT"
+                  ;;
+                *)
+                  echo "::error::Unknown environment '${{ inputs.environment }}' (expected staging or production)"
+                  exit 1
+                  ;;
+              esac
 
-    # LOCAL_DEV skips Cloudflare Access and grants an admin context. Nothing in
-    # a request can tell a local process from a deployed one — wrangler dev
-    # populates request.cf and simulates the custom domain — so deploy time is
-    # where it has to be caught.
-    - name: Check no development bypass is set
-      shell: bash
-      env:
-        CLOUDFLARE_API_TOKEN: ${{ inputs.api-token }}
-        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.account-id }}
-      run: npm run ${{ steps.target.outputs.safety_check }}
+        # LOCAL_DEV skips Cloudflare Access and grants an admin context. Nothing in
+        # a request can tell a local process from a deployed one — wrangler dev
+        # populates request.cf and simulates the custom domain — so deploy time is
+        # where it has to be caught.
+        - name: Check no development bypass is set
+          shell: bash
+          env:
+              CLOUDFLARE_API_TOKEN: ${{ inputs.api-token }}
+              CLOUDFLARE_ACCOUNT_ID: ${{ inputs.account-id }}
+          run: npm run ${{ steps.target.outputs.safety_check }}
 
-    # A worker that lands before its migration takes the environment down until
-    # the migration runs. Refuse to ship code that is ahead of the schema.
-    - name: Check the schema is ahead of the code
-      shell: bash
-      env:
-        CLOUDFLARE_API_TOKEN: ${{ inputs.api-token }}
-        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.account-id }}
-      run: npm run ${{ steps.target.outputs.schema_check }}
+        # A worker that lands before its migration takes the environment down until
+        # the migration runs. Refuse to ship code that is ahead of the schema.
+        - name: Check the schema is ahead of the code
+          shell: bash
+          env:
+              CLOUDFLARE_API_TOKEN: ${{ inputs.api-token }}
+              CLOUDFLARE_ACCOUNT_ID: ${{ inputs.account-id }}
+          run: npm run ${{ steps.target.outputs.schema_check }}
 
-    - name: Deploy worker
-      id: worker_deploy
-      shell: bash
-      working-directory: apps/worker
-      env:
-        CLOUDFLARE_API_TOKEN: ${{ inputs.api-token }}
-        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.account-id }}
-      run: npx wrangler deploy ${{ steps.target.outputs.worker_args }}
+        - name: Deploy worker
+          id: worker_deploy
+          shell: bash
+          working-directory: apps/worker
+          env:
+              CLOUDFLARE_API_TOKEN: ${{ inputs.api-token }}
+              CLOUDFLARE_ACCOUNT_ID: ${{ inputs.account-id }}
+          run: npx wrangler deploy ${{ steps.target.outputs.worker_args }}
 
-    - name: Smoke test
-      id: smoke
-      shell: bash
-      run: |
-        for attempt in 1 2 3 4 5 6 7 8 9 10; do
-          if curl -fsS "${{ steps.target.outputs.site }}/health"; then exit 0; fi
-          sleep 6
-        done
-        echo "::error::${{ steps.target.outputs.site }}/health did not answer after the deploy."
-        exit 1
+        - name: Smoke test
+          id: smoke
+          shell: bash
+          run: |
+              for attempt in 1 2 3 4 5 6 7 8 9 10; do
+                if curl -fsS "${{ steps.target.outputs.site }}/health"; then exit 0; fi
+                sleep 6
+              done
+              echo "::error::${{ steps.target.outputs.site }}/health did not answer after the deploy."
+              exit 1
 
-    - name: Summary
-      if: always()
-      shell: bash
-      run: |
-        {
-          echo "## Deployed to ${{ inputs.environment }}"
-          echo ""
-          echo "| what | target | outcome |"
-          echo "|---|---|---|"
-          echo "| worker | \`${{ steps.target.outputs.worker_name }}\` | ${{ steps.worker_deploy.outcome || 'skipped' }} |"
-          echo "| health | ${{ steps.target.outputs.site }}/health | ${{ steps.smoke.outcome || 'skipped' }} |"
-        } >> "$GITHUB_STEP_SUMMARY"
+        - name: Summary
+          if: always()
+          shell: bash
+          run: |
+              {
+                echo "## Deployed to ${{ inputs.environment }}"
+                echo ""
+                echo "| what | target | outcome |"
+                echo "|---|---|---|"
+                echo "| worker | \`${{ steps.target.outputs.worker_name }}\` | ${{ steps.worker_deploy.outcome || 'skipped' }} |"
+                echo "| health | ${{ steps.target.outputs.site }}/health | ${{ steps.smoke.outcome || 'skipped' }} |"
+              } >> "$GITHUB_STEP_SUMMARY"

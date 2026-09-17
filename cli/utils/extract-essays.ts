@@ -19,12 +19,9 @@
  */
 
 import dotenv from 'dotenv';
-import { exec } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { promisify } from 'node:util';
-
-const execAsync = promisify(exec);
+import { isEnvironment, query, type Environment } from '../wrangler.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -35,26 +32,8 @@ const scriptDir = new URL('.', import.meta.url).pathname.replace(
 	'$1'
 );
 const repoRoot = resolve(scriptDir, '..', '..');
-const workerDir = resolve(repoRoot, 'apps', 'worker');
 
 dotenv.config({ path: resolve(repoRoot, '.env') });
-
-const ENV_CONFIG = {
-	local: {
-		database: 'antisocial-media',
-		flags: '--local',
-	},
-	staging: {
-		database: 'antisocial-media-staging',
-		flags: '--remote',
-	},
-	production: {
-		database: 'antisocial-media',
-		flags: '--remote',
-	},
-} as const;
-
-type Environment = keyof typeof ENV_CONFIG;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -72,8 +51,8 @@ function parseArgs(): Options {
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
 			case '--env': {
-				const env = args[++i] as Environment;
-				if (!['local', 'staging', 'production'].includes(env)) {
+				const env = args[++i];
+				if (!isEnvironment(env)) {
 					console.error(`Invalid environment: ${env}`);
 					console.error('Valid options: local, staging, production');
 					process.exit(1);
@@ -109,29 +88,6 @@ Examples:
 	return options;
 }
 
-interface D1QueryResult<T> {
-	success: boolean;
-	results: T[];
-}
-
-async function executeQuery<T>(
-	database: string,
-	flags: string,
-	query: string
-): Promise<T[]> {
-	const normalizedQuery = query.replace(/\s+/g, ' ').trim();
-	const escapedQuery = normalizedQuery.replace(/"/g, '\\"');
-	const command = `npx wrangler d1 execute ${database} ${flags} --json --command="${escapedQuery}"`;
-
-	const { stdout } = await execAsync(command, {
-		cwd: workerDir,
-		maxBuffer: 50 * 1024 * 1024,
-	});
-
-	const parsed: D1QueryResult<T>[] = JSON.parse(stdout);
-	return parsed[0]?.results || [];
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,38 +114,35 @@ interface EssayReferenceRow {
 
 async function main(): Promise<void> {
 	const { env, json } = parseArgs();
-	const config = ENV_CONFIG[env];
 	const userId = process.env.USER_ID;
 	if (!userId) {
 		console.error('USER_ID environment variable is required');
 		process.exit(1);
 	}
 
-	console.log(`Extracting essays from ${env} (${config.database})...`);
+	console.log(`Extracting essays from ${env}...`);
 
-	const essays = await executeQuery<EssayRow>(
-		config.database,
-		config.flags,
-		`
+	const essays = await query<EssayRow>(env, 'db', {
+		sql: `
 		SELECT id, content, posted, tags, replaces, source, created_at, updated_at
 		FROM essays
-		WHERE user_id = '${userId}'
+		WHERE user_id = ?
 		  AND id NOT IN (SELECT replaces FROM essays WHERE replaces IS NOT NULL)
 		ORDER BY created_at DESC
-		`
-	);
+		`,
+		params: [userId],
+	});
 
-	const references = await executeQuery<EssayReferenceRow>(
-		config.database,
-		config.flags,
-		`
+	const references = await query<EssayReferenceRow>(env, 'db', {
+		sql: `
 		SELECT er.id, er.essay_id, er.entity_type, er.entity_id, er.page, er.position
 		FROM essay_references er
 		INNER JOIN essays e ON e.id = er.essay_id
-		WHERE e.user_id = '${userId}'
+		WHERE e.user_id = ?
 		ORDER BY er.essay_id, er.position
-		`
-	);
+		`,
+		params: [userId],
+	});
 
 	const refsByEssay = new Map<string, EssayReferenceRow[]>();
 	for (const ref of references) {

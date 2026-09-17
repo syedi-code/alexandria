@@ -5,7 +5,7 @@ import {
 	isEnvironment,
 	type Database,
 	type Environment,
-} from './wrangler.js';
+} from '../wrangler.js';
 
 /** D1 Free allows 100,000 rows written per day, shared with everything else the app writes. */
 export const DEFAULT_REMOTE_BUDGET = 60_000;
