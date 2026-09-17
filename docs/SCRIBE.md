@@ -99,6 +99,23 @@ CPU per request**; network waits don't count, but streaming and verification do.
 If requests end with _exceeded resource limits_, the chat endpoint needs Workers
 Paid ($5/month). Nothing else here does.
 
+Measured on production, `wrangler tail --format json` reporting `cpuTime`:
+
+| Request                          | CPU   |
+| -------------------------------- | ----- |
+| `GET /api/catalogue`             | 12 ms |
+| `search_pages` over 21,656 pages | 63 ms |
+| `read_pages`, five pages         | 11 ms |
+
+All three are over the free allowance and all three returned `ok`, so the limit
+is evidently not enforced per request at this volume. Do not read that as
+headroom: one chat turn is a dozen such requests inside one invocation, and
+nothing in the free plan promises to keep tolerating it. The chat endpoint is
+the first thing that will need Workers Paid.
+
+A turn has not been measured end to end, because driving the deployed chat route
+needs a browser session and Scribe's frontend does not exist yet.
+
 ### 7. MCP, for you alone
 
 MCP clients authenticate with a Cloudflare Access **service token**. No OAuth.
@@ -146,6 +163,14 @@ All routes are under `/api` and need a session, except `/api/mcp`.
 | GET    | `/documents/:id/pages?from=&to=` | extracted text, at most five pages                                          |
 | ALL    | `/mcp`                           | MCP over Streamable HTTP, stateless                                         |
 
+**What a reader should be shown.** An answer message holds the text of every
+step, not only the last one, and models narrate their searching between tool
+calls ("Let me read the fuller context…") however firmly the instructions ask
+them not to. The answer is the text after the final `step-start`; the earlier
+text belongs with the tool activity, collapsed or beside it. A frontend that
+renders every text part in sequence shows the reader the model thinking out loud
+and calls it the answer.
+
 `POST /conversations/:id/chat` streams an AI SDK UI message stream, so scribe's
 `useChat` reads it directly. Send only the new message; history is loaded on the
 server. The stream ends with a `data-citations` part: every citation in the
@@ -154,14 +179,24 @@ answer, its page, and whether its quote was found there.
 ## How an answer is kept honest
 
 1. Every page a tool shows the model is labelled with a handle — `[P7]`.
-2. The model cites as `[P7 "verbatim words"]`. A handle exists only for a page
+2. The model cites as `[P7 "verbatim words"]`, or as `"verbatim words" [P7]`,
+   which is what smaller models tend to write. A handle exists only for a page
    it was shown, so it can't cite a page it never read.
 3. After the answer, each quote is normalised (case, diacritics, ligatures,
    punctuation, line-break hyphens) and looked for on its page, or across the
    break onto the next.
-4. The result — `verified`, `unverified`, or `unverifiable` for a page without
+4. Both readings of a hyphen are tried, since extraction turns a dash into one
+   (`rationalism-their`) as readily as it breaks a word across a line
+   (`self- deception`); a quote may elide words with `...`, provided every part
+   of it is on the page in order.
+5. The result — `verified`, `unverified`, or `unverifiable` for a page without
    text — is streamed to the reader, saved with the message, and written to
    `citations`.
+
+An unverified citation carries a reason. `partial_match` means the quote begins
+on the page and then diverges: either the scan is damaged mid-quote, or the
+model misquoted. It says where to look, not who is at fault. It is common on
+long quotes, which is why the instructions ask for five to twenty words.
 
 "Verified" means the words are on the page. It does not mean they support the
 claim. The verification rate per model, and per document, is in `citations`:

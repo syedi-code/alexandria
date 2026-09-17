@@ -5,7 +5,11 @@ export type CitationCheck =
 	| { status: 'verified'; matched: PageRef[] }
 	| {
 			status: 'unverified';
-			reason: 'not_found' | 'quote_too_short' | 'no_such_page';
+			reason:
+				| 'not_found'
+				| 'partial_match'
+				| 'quote_too_short'
+				| 'no_such_page';
 	  }
 	| { status: 'unverifiable'; reason: 'no_text_layer' };
 
@@ -103,6 +107,24 @@ function contains(haystack: string, quote: string): boolean {
 	return false;
 }
 
+/**
+ * Whether the quote begins on the page, when the whole of it is not there.
+ *
+ * It says where to look, not who is at fault. A long quote copied faithfully
+ * diverges when it runs through a word the scan mangled — "forms" arriving as
+ * "lOrms" — and a misquote diverges at the word the model got wrong. Both are
+ * unverified; both are worth distinguishing from a quote the page does not
+ * support at all.
+ */
+function beginsOn(haystack: string, quote: string): boolean {
+	const page = ` ${normalizeForMatching(haystack, 'split')} `;
+	const words = normalizeForMatching(quote, 'split').split(' ');
+	return (
+		words.length > MIN_QUOTE_WORDS &&
+		page.includes(` ${words.slice(0, MIN_QUOTE_WORDS).join(' ')} `)
+	);
+}
+
 export function checkQuote(
 	quote: string,
 	page: PageText | undefined,
@@ -123,7 +145,14 @@ export function checkQuote(
 	if (next?.text && contains(acrossPageBreak(page.text, next.text), quote)) {
 		return { status: 'verified', matched: [page.ref, next.ref] };
 	}
-	return { status: 'unverified', reason: 'not_found' };
+
+	const haystack = next?.text
+		? acrossPageBreak(page.text, next.text)
+		: page.text;
+	return {
+		status: 'unverified',
+		reason: beginsOn(haystack, quote) ? 'partial_match' : 'not_found',
+	};
 }
 
 export interface CitationInput {
