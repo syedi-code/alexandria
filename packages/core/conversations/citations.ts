@@ -4,10 +4,14 @@ import type { PageRef } from '../works/pages.js';
 import type { PageHandles } from './handles.js';
 
 /**
- * `[P7 "quoted words"]`. Curly quotes are accepted because models produce
- * them; a colon or comma after the handle is tolerated for the same reason.
+ * `[P7 "quoted words"]`, or `"quoted words" [P7]` — smaller models put the
+ * quote in the prose and the bare handle after it, and an answer whose quotes
+ * go unchecked looks exactly like one whose quotes were checked. A bracketed
+ * quote runs to the closing `"]`, so it may quote a quotation. Curly quotes,
+ * and a colon or comma after the handle, are accepted for the same reason.
  */
-const CITATION = /\[(P\d+)\s*[:,]?\s*["“]([^"”\]]+)["”]\s*\]/g;
+const CITATION =
+	/\[(P\d+)\s*[:,]?\s*["“](.+?)["”]\s*\]|["“]([^"”]+)["”]\s*\[(P\d+)\]/g;
 
 export interface CitationMarker {
 	handle: string;
@@ -20,10 +24,12 @@ export type AnswerCitation = CitationMarker & { ref: PageRef | null } & (
 	);
 
 export function parseCitations(text: string): CitationMarker[] {
-	return [...text.matchAll(CITATION)].map(([, handle, quote]) => ({
-		handle,
-		quote: quote.trim(),
-	}));
+	return [...text.matchAll(CITATION)].map(
+		([, handle, quote, quoteBefore, handleAfter]) => ({
+			handle: handle ?? handleAfter,
+			quote: (quote ?? quoteBefore).trim(),
+		})
+	);
 }
 
 /** Every citation in an answer, checked against the page its handle names. */

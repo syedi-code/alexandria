@@ -364,6 +364,52 @@ describe('citation verification', () => {
 		});
 	});
 
+	const onPage = (text: string) => ({
+		ref: ref(1),
+		work_id: 'w',
+		work_title: 't',
+		creator: 'c',
+		printed_page: null,
+		text,
+	});
+
+	it('reads a hyphen between words as a dash when that is what it was', () => {
+		const page = onPage(
+			'claims that his own is based on\nthe firmest rationalism-their barbaric repudiation, for the sake of'
+		);
+		const status = (quote: string) => checkQuote(quote, page).status;
+
+		expect(status('their barbaric repudiation, for the sake of')).toBe(
+			'verified'
+		);
+		expect(
+			status('the firmest rationalism—their barbaric repudiation')
+		).toBe('verified');
+	});
+
+	it('verifies a quote with words left out, if every part is there in order', () => {
+		const page = onPage(
+			'each of these gentlemen, in order to impugn on higher authority the weakness of primitive thought, claims that his own is based on the firmest rationalism'
+		);
+		const status = (quote: string) => checkQuote(quote, page).status;
+
+		expect(
+			status('each of these gentlemen... claims that his own is based')
+		).toBe('verified');
+		expect(
+			status('each of these gentlemen … the firmest rationalism')
+		).toBe('verified');
+		expect(
+			status('claims that his own is based . . . each of these gentlemen')
+		).toBe('unverified');
+		expect(
+			status('each of these gentlemen... claims... firmest rationalism')
+		).toBe('unverified');
+		expect(
+			status('each of these gentlemen... claims that his own is sound')
+		).toBe('unverified');
+	});
+
 	it('does not match inside a longer word', () => {
 		const page = {
 			ref: ref(1),
@@ -406,6 +452,16 @@ describe('readable works', () => {
 		});
 		const [work] = await listReadableWorks(db.d1, { filter: 'gay' });
 		expect(work.documents[0].text).toBe('scan');
+	});
+
+	it('filters on every word, across title and creator', async () => {
+		const titles = async (filter: string) =>
+			(await listReadableWorks(db.d1, { filter })).map((w) => w.title);
+		expect(await titles('nietzsche gay')).toEqual(['The Gay Science']);
+		expect(await titles('  Beyond   Nietzsche ')).toEqual([
+			'Beyond Good and Evil',
+		]);
+		expect(await titles('nietzsche kant')).toEqual([]);
 	});
 
 	it('gives the bucket key for a document, never the stored URL path', async () => {

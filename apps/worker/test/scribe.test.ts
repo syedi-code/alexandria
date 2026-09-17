@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { APICallError } from 'ai';
 import { convertArrayToReadableStream, MockLanguageModelV4 } from 'ai/test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -219,6 +220,41 @@ describe('a chat turn', () => {
 			.all()
 			.map((row) => ({ ...row }));
 		expect(statuses).toEqual([{ page_no: 2, status: 'verified' }]);
+	});
+
+	it('tells the reader why an answer failed, and saves nothing empty', async () => {
+		const outOfCredit = new MockLanguageModelV4({
+			doStream: async () => {
+				throw new APICallError({
+					message: 'Your credit balance is too low',
+					url: 'https://api.anthropic.com/v1/messages',
+					requestBodyValues: {},
+					statusCode: 400,
+					responseBody:
+						'{"type":"error","error":{"message":"Your credit balance is too low to access the Anthropic API."}}',
+					isRetryable: false,
+				});
+			},
+		});
+		const titleModel = new MockLanguageModelV4();
+
+		const body = await runTurn(
+			conversation,
+			'Anything?',
+			outOfCredit,
+			titleModel
+		);
+
+		const errors = body.match(/"type":"error"[^}]*/g) ?? [];
+		expect(errors).toEqual([
+			`"type":"error","errorText":"Scribe's model provider account is out of credit."`,
+		]);
+		expect(
+			(await listMessages(db.d1, ids.userAdmin, conversation.id)).map(
+				(m) => m.role
+			)
+		).toEqual(['user']);
+		expect(titleModel.doGenerateCalls).toHaveLength(0);
 	});
 
 	it('marks a citation to a page the model never saw', async () => {
