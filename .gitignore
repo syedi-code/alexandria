@@ -42,5 +42,5 @@ plans/*
 !plans/scribe-extraction-plan.md
 
 # A stale frontend build lives here locally. It carries licensed fonts that
-# must never be committed again — see docs/OPEN-SOURCE-AUDIT.md.
+# must never be committed again.
 apps/web/
