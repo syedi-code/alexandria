@@ -1,0 +1,36 @@
+# Cloudflare Worker config (example)
+# Copy to wrangler.toml and fill in placeholders.
+# Quick setup: npm run setup:env -w @antisocial/cli
+
+name = "<WORKER_NAME>"
+account_id = "<YOUR_ACCOUNT_ID>"
+main = "server.ts"
+compatibility_date = "<YYYY-MM-DD>"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "antisocial-media"
+database_id = "<YOUR_D1_DATABASE_ID>"
+
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "antisocial-media-files"
+
+# Secrets (set via: npx wrangler secret put <KEY>):
+#   API_KEY, AUTHORIZED_USER_ID
+
+# Staging environment (optional)
+# Setup: npm run setup:staging -w @antisocial/cli
+# Deploy: npx wrangler deploy --env staging
+#
+# [env.staging]
+# name = "journal-bot-staging"
+#
+# [[env.staging.d1_databases]]
+# binding = "DB"
+# database_name = "antisocial-media-staging"
+# database_id = "<YOUR_STAGING_D1_DATABASE_ID>"
+#
+# [[env.staging.r2_buckets]]
+# binding = "R2_BUCKET"
+# bucket_name = "antisocial-media-files-staging"

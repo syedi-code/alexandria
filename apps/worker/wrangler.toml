@@ -1,0 +1,111 @@
+# The worker is still named antisocial-worker. A worker cannot be renamed —
+# deploying under a new name creates a second one — and the name is visible
+# only in the dashboard and on *.workers.dev. The hostname is what matters,
+# and that is set below. Renaming would mean: deploy new, move both custom
+# domains, delete old, with a brief window where routes are in flux. It buys
+# nothing and it is not on any critical path.
+name = "antisocial-worker"
+account_id = "71f096d9f762dc997a51b7492bd1474d"
+main = "server.ts"
+compatibility_date = "2025-08-24"
+
+# Custom domains. `custom_domain = true` makes wrangler provision the DNS
+# record on the zone at deploy time, so this is the whole of what
+# alexandria.socialeating.studio needs.
+#
+# The worker is deliberately NOT behind Cloudflare Access: it validates the
+# Access JWT itself against TEAM_DOMAIN / POLICY_AUD (api/auth.ts). Fronting
+# it with Access would break the bearer-token path the extraction pipeline
+# uses.
+[[routes]]
+pattern = "alexandria.socialeating.studio"
+custom_domain = true
+
+# Kept so existing clients and bookmarks do not break.
+[[routes]]
+pattern = "api.ibrahimsyed.io"
+custom_domain = true
+
+# The catalogue page at /. `not_found_handling = "none"` is load-bearing: only
+# an exact asset match is served from here, so every path that is not a file in
+# public/ — every /api/ route — still reaches the worker.
+[assets]
+directory = "./public"
+not_found_handling = "none"
+html_handling = "auto-trailing-slash"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "antisocial-media"
+database_id = "069d3dc5-2f80-4333-be34-d3b1cf455af7"
+
+# R2 Storage for PDFs
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "antisocial-media-files"
+
+# Page search index (FTS5). Kept out of DB because `wrangler d1 export`, which
+# backups use, refuses databases with virtual tables. Derived from `pages` and
+# never backed up: `npm run pages:index` rebuilds it.
+[[d1_databases]]
+binding = "SEARCH"
+database_name = "alexandria-search"
+database_id = "8167ef4a-1f28-4d1c-870d-2f0c51e06887"
+
+[vars]
+# TEAM_DOMAIN, POLICY_AUD, and ADMIN_EMAIL are set as secrets:
+#   npx wrangler secret put TEAM_DOMAIN
+#   npx wrangler secret put POLICY_AUD
+#   npx wrangler secret put ADMIN_EMAIL
+
+# =============================================================================
+# Staging Environment
+# =============================================================================
+# To set up staging resources, run:
+#   npx tsx cli/setup/create-d1-resources.ts --env staging --apply-schema --update-toml
+#   npx tsx cli/setup/create-r2-resources.ts --env staging --update-toml
+#
+# Then set secrets:
+#   npx wrangler secret put API_KEY --env staging
+
+[env.staging]
+name = "antisocial-worker-staging"
+
+# Top-level [[routes]] are INHERITED by named environments. Without these two
+# lines, `wrangler deploy --env staging` attaches production's custom domains
+# to the staging worker — which reads the staging database — and disables this
+# worker's workers.dev URL in the same breath.
+routes = []
+workers_dev = true
+
+[env.staging.assets]
+directory = "./public"
+not_found_handling = "none"
+html_handling = "auto-trailing-slash"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "antisocial-media-staging"
+database_id = "ba85f6dc-715a-48de-bb9f-49d3907fbf79"
+
+[[env.staging.r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "antisocial-media-files-staging"
+preview_bucket_name = "antisocial-media-files-staging"
+
+# Page search index (FTS5). Kept out of DB because `wrangler d1 export`, which
+# backups use, refuses databases with virtual tables. Derived from `pages` and
+# never backed up: `npm run pages:index` rebuilds it.
+[[env.staging.d1_databases]]
+binding = "SEARCH"
+database_name = "alexandria-search-staging"
+database_id = "8d7a1231-0961-496e-898a-f8ccb2aa950b"
+
+[env.staging.vars]
+# TEAM_DOMAIN, POLICY_AUD, and ADMIN_EMAIL are set as secrets:
+#   cd apps/worker
+#   npx wrangler secret put TEAM_DOMAIN --env staging
+#   npx wrangler secret put POLICY_AUD --env staging
+#   npx wrangler secret put ADMIN_EMAIL --env staging
+

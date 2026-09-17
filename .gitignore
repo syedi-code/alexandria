@@ -1,0 +1,46 @@
+!.gitkeep
+
+.env
+.DS_Store
+.dev.vars
+.dev.env
+
+.wrangler/
+.claude/
+.gemini/
+.vscode/
+
+node_modules/
+dist/
+
+local/
+config/
+mockups/
+resources/*
+fonts/*
+sql/backups/*
+../fonts/
+
+*.log
+*.db
+*.ignore
+*.png
+*.dev
+*.vars
+*.tsbuildinfo
+# Generated declarations; tsc emits them to node_modules/.cache.
+*.d.ts
+
+GEMINI.md
+TODO.md
+TODO-*.md
+
+.sfdx/
+.specify/*
+specs/
+plans/*
+!plans/scribe-extraction-plan.md
+
+# A stale frontend build lives here locally. It carries licensed fonts that
+# must never be committed again — see docs/OPEN-SOURCE-AUDIT.md.
+apps/web/

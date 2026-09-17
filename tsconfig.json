@@ -1,0 +1,11 @@
+{
+	// apps/web is deliberately absent: it contains .vue single-file components,
+	// which plain tsc cannot resolve. vue-tsc typechecks it, from its own
+	// build script.
+	"files": [],
+	"references": [
+		{ "path": "./packages/core" },
+		{ "path": "./packages/core/tsconfig.test.json" },
+		{ "path": "./apps/worker" }
+	]
+}

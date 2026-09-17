@@ -1,0 +1,13 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"composite": true,
+		"noEmit": false,
+		"emitDeclarationOnly": true,
+		"declaration": true,
+		"outDir": "../../node_modules/.cache/tsc/core-test",
+		"types": ["node", "@cloudflare/workers-types"]
+	},
+	"include": ["test/**/*.ts"],
+	"references": [{ "path": "./tsconfig.json" }]
+}

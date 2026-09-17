@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Alexandria</title>
+		<meta name="description" content="The library." />
+		<meta name="color-scheme" content="light dark" />
+		<link
+			rel="icon"
+			href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='14'%3E%F0%9F%9B%8B%3C/text%3E%3C/svg%3E"
+		/>
+		<style>
+			:root {
+				--paper: #fbfaf7;
+				--ink: #1c1b18;
+				--muted: #8a857b;
+				--faint: #d9d5cc;
+				--serif:
+					ui-serif, 'Iowan Old Style', 'Palatino Linotype', Palatino,
+					Georgia, serif;
+			}
+
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--paper: #11110f;
+					--ink: #e8e4db;
+					--muted: #86817a;
+					--faint: #2e2c28;
+				}
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				background: var(--paper);
+				color: var(--ink);
+				font-family: var(--serif);
+				font-size: 18px;
+				line-height: 1.45;
+				text-align: center;
+				-webkit-font-smoothing: antialiased;
+				-webkit-text-size-adjust: 100%;
+			}
+
+			main {
+				max-width: 32rem;
+				margin: 0 auto;
+				padding: 16vh 1.25rem 8rem;
+			}
+
+			h1 {
+				margin: 0 0 2.5rem;
+				font-size: 1rem;
+				font-weight: 400;
+				letter-spacing: 0.32em;
+				text-transform: uppercase;
+				color: var(--muted);
+			}
+
+			input {
+				width: 100%;
+				padding: 0.4rem 0;
+				border: 0;
+				border-bottom: 1px solid var(--faint);
+				border-radius: 0;
+				background: transparent;
+				color: var(--ink);
+				font: inherit;
+				font-size: 1.3rem;
+				text-align: center;
+				transition: border-color 0.2s;
+			}
+
+			input::placeholder {
+				color: var(--muted);
+				opacity: 0.6;
+			}
+
+			input:focus {
+				outline: none;
+				border-bottom-color: var(--muted);
+			}
+
+			input::-webkit-search-cancel-button {
+				display: none;
+			}
+
+			ol {
+				list-style: none;
+				margin: 3.5rem 0 0;
+				padding: 0;
+			}
+
+			li + li {
+				margin-top: 1.6rem;
+			}
+
+			.title {
+				display: block;
+				font-size: 1.1rem;
+			}
+
+			.creator {
+				display: block;
+				margin-top: 0.15rem;
+				font-size: 0.78rem;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				color: var(--muted);
+			}
+
+			mark {
+				background: none;
+				color: inherit;
+				text-decoration: underline;
+				text-decoration-color: var(--muted);
+				text-underline-offset: 0.2em;
+			}
+
+			.quiet {
+				margin: 3.5rem 0 0;
+				color: var(--muted);
+				font-style: italic;
+			}
+
+			.visually-hidden {
+				position: absolute;
+				width: 1px;
+				height: 1px;
+				overflow: hidden;
+				clip-path: inset(50%);
+				white-space: nowrap;
+			}
+
+			@media (prefers-reduced-motion: no-preference) {
+				ol {
+					animation: appear 0.5s ease both;
+				}
+				@keyframes appear {
+					from {
+						opacity: 0;
+					}
+				}
+			}
+		</style>
+	</head>
+
+	<body>
+		<main>
+			<h1>Alexandria</h1>
+
+			<label class="visually-hidden" for="q">Search the library</label>
+			<input
+				id="q"
+				type="search"
+				placeholder="search"
+				autocomplete="off"
+				autocapitalize="off"
+				spellcheck="false"
+				enterkeyhint="search"
+			/>
+
+			<ol id="list" aria-live="polite"></ol>
+			<p class="quiet" id="quiet" hidden></p>
+		</main>
+
+		<script type="module">
+			const list = document.getElementById('list');
+			const quiet = document.getElementById('quiet');
+			const q = document.getElementById('q');
+
+			let works = [];
+
+			const say = (text) => {
+				quiet.textContent = text;
+				quiet.hidden = false;
+			};
+
+			// A search over a hundred-odd titles runs here, not as a request per
+			// keystroke; accents are folded so "cesaire" finds Césaire.
+			const fold = (s) =>
+				s
+					.normalize('NFD')
+					.replace(/\p{Diacritic}/gu, '')
+					.toLowerCase();
+
+			const escape = (s) =>
+				s.replace(
+					/[&<>"']/g,
+					(c) =>
+						({
+							'&': '&amp;',
+							'<': '&lt;',
+							'>': '&gt;',
+							'"': '&quot;',
+							"'": '&#39;',
+						})[c]
+				);
+
+			/** Marks matched runs in the original text, located via the folded one. */
+			function highlight(text, terms) {
+				const folded = fold(text);
+				const spans = terms
+					.flatMap((term) => {
+						const found = [];
+						for (
+							let at = folded.indexOf(term);
+							at !== -1;
+							at = folded.indexOf(term, at + term.length)
+						) {
+							found.push([at, at + term.length]);
+						}
+						return found;
+					})
+					.sort((a, b) => a[0] - b[0]);
+
+				let out = '';
+				let cursor = 0;
+				for (const [start, end] of spans) {
+					if (start < cursor) continue;
+					out +=
+						escape(text.slice(cursor, start)) +
+						`<mark>${escape(text.slice(start, end))}</mark>`;
+					cursor = end;
+				}
+				return out + escape(text.slice(cursor));
+			}
+
+			function render() {
+				const terms = fold(q.value).split(/\s+/).filter(Boolean);
+				const shown = works.filter((w) =>
+					terms.every((t) => w.haystack.includes(t))
+				);
+
+				list.innerHTML = shown
+					.map(
+						(w) => `<li>
+							<span class="title">${highlight(w.title, terms)}</span>
+							<span class="creator">${highlight(w.creator, terms)}</span>
+						</li>`
+					)
+					.join('');
+
+				if (shown.length) quiet.hidden = true;
+				else
+					say(
+						works.length
+							? 'Nothing by that name.'
+							: 'The shelves are empty.'
+					);
+			}
+
+			q.addEventListener('input', render);
+
+			document.addEventListener('keydown', (event) => {
+				if (event.key === '/' && document.activeElement !== q) {
+					event.preventDefault();
+					q.focus();
+				} else if (
+					event.key === 'Escape' &&
+					document.activeElement === q
+				) {
+					q.value = '';
+					render();
+				}
+			});
+
+			try {
+				const response = await fetch('/api/catalogue', {
+					headers: { accept: 'application/json' },
+				});
+				if (response.status === 404) {
+					say('This library is not published.');
+				} else if (!response.ok) {
+					say('The library could not be read just now.');
+				} else {
+					works = (await response.json()).works.map((w) => ({
+						title: w.title,
+						creator: w.creator,
+						haystack: fold(`${w.title} ${w.creator}`),
+					}));
+					render();
+				}
+			} catch {
+				say('The library could not be reached.');
+			}
+		</script>
+	</body>
+</html>

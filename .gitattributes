@@ -1,0 +1,19 @@
+# One line ending in the repository, whatever the checkout platform. Without
+# this, a Windows checkout rewrites every file it touches to CRLF and snapshot
+# files show up modified with no change in them.
+* text=auto eol=lf
+
+# Binary, and never to be line-ending-normalised or diffed as text.
+*.png  binary
+*.jpg  binary
+*.webp binary
+*.pdf  binary
+*.otf  binary
+*.ttf  binary
+*.woff binary
+*.woff2 binary
+*.zip  binary
+
+# Generated: keep it out of diffs and out of language statistics.
+package-lock.json  linguist-generated=true -diff
+sql/migrations/*.sql linguist-language=SQL

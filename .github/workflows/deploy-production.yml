@@ -1,0 +1,31 @@
+# Merging into `main` deploys production. That is the whole rule.
+name: Deploy → Production
+
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+
+concurrency:
+    group: deploy-production
+    cancel-in-progress: false
+
+jobs:
+    deploy:
+        name: Deploy to production
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
+
+            - uses: actions/setup-node@v5
+              with:
+                  node-version-file: '.nvmrc'
+                  cache: 'npm'
+
+            - run: npm ci
+
+            - uses: ./.github/actions/deploy-cloudflare
+              with:
+                  environment: production
+                  api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

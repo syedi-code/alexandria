@@ -1,0 +1,22 @@
+# Copy to .dev.vars for `npm run dev`. Git ignores .dev.vars.
+#
+# LOCAL_DEV stands in for Cloudflare Access, which is not in front of a local
+# process. It is ignored on a deployed worker: see isLocalDev() in
+# apps/worker/api/auth.ts, which also requires the request to have arrived
+# without the edge runtime's `cf` object.
+LOCAL_DEV=true
+
+# Who a local session runs as. Set it to your own user id to develop against
+# data pulled by the extract:* scripts; the default owns nothing.
+LOCAL_DEV_USER_ID=00000000-0000-4000-8000-000000000000
+
+ADMIN_EMAIL=you@example.com
+
+# Signs /files/* URLs. Any long random string locally; in a deployed
+# environment it is a wrangler secret. Without it, no file can be fetched.
+FILE_SIGNING_SECRET=a-long-random-string-for-local-use
+
+# Optional: the model roster for Scribe. A provider without a key is left off.
+# ANTHROPIC_API_KEY=
+# OPENAI_API_KEY=
+# GOOGLE_GENERATIVE_AI_API_KEY=

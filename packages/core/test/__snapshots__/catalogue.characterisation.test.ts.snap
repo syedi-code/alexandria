@@ -1,0 +1,127 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`getBookDetail > matches the recorded payload shape 1`] = `
+{
+  "author": {
+    "bio": "German philologist.",
+    "born": "1844",
+    "created_at": "2026-01-01T00:00:00.000Z",
+    "died": "1900",
+    "id": "11111111-1111-4111-8111-000000000010",
+    "name": "Friedrich Nietzsche",
+    "updated_at": "2026-01-01T00:00:00.000Z",
+  },
+  "book": {
+    "author": "Friedrich Nietzsche",
+    "author_id": "11111111-1111-4111-8111-000000000010",
+    "cover_url": "books/bge/cover.jpg",
+    "created_at": "2026-01-01T00:00:00.000Z",
+    "description": null,
+    "id": "11111111-1111-4111-8111-000000000020",
+    "isbn": null,
+    "originally_published": "1886",
+    "pdf_page_offset": 12,
+    "pdf_url": "books/bge/bge.pdf",
+    "title": "Beyond Good and Evil",
+    "updated_at": "2026-01-01T00:00:00.000Z",
+  },
+  "essays": [
+    {
+      "id": "11111111-1111-4111-8111-000000000051",
+      "page": null,
+      "subtitle": null,
+      "title": "A second look at [[book:11111111-1111-4111-8111-000000000020]], alongside [[book",
+    },
+    {
+      "id": "11111111-1111-4111-8111-000000000050",
+      "page": "89",
+      "subtitle": null,
+      "title": "On attention and the abyss. [[book:11111111-1111-4111-8111-000000000020]] and [[",
+    },
+  ],
+  "media": [
+    {
+      "book_id": "11111111-1111-4111-8111-000000000020",
+      "caption": null,
+      "created_at": "2026-01-01T00:00:00.000Z",
+      "id": "11111111-1111-4111-8111-000000000060",
+      "kind": "image",
+      "path": "books/bge/media/a.jpg",
+      "sort_order": 0,
+      "updated_at": "2026-01-01T00:00:00.000Z",
+    },
+    {
+      "book_id": "11111111-1111-4111-8111-000000000020",
+      "caption": "Second plate",
+      "created_at": "2026-01-01T00:00:00.000Z",
+      "id": "11111111-1111-4111-8111-000000000061",
+      "kind": "image",
+      "path": "books/bge/media/b.jpg",
+      "sort_order": 1,
+      "updated_at": "2026-01-01T00:00:00.000Z",
+    },
+  ],
+  "notes": [
+    {
+      "content": "The abyss gazes back — on self-deception.",
+      "created_at": "2026-02-01T00:00:00.000Z",
+      "id": "11111111-1111-4111-8111-000000000040",
+      "page": "89",
+    },
+  ],
+  "quotes": [
+    {
+      "created_at": "2026-02-01T00:00:00.000Z",
+      "id": "11111111-1111-4111-8111-000000000030",
+      "page": "89",
+      "quote": "He who fights with monsters.",
+    },
+  ],
+  "related": [
+    {
+      "author": "Simone Weil",
+      "co_citations": 1,
+      "id": "11111111-1111-4111-8111-000000000021",
+      "title": "Gravity and Grace",
+    },
+    {
+      "author": "Friedrich Nietzsche",
+      "co_citations": 1,
+      "id": "11111111-1111-4111-8111-000000000023",
+      "title": "The Gay Science",
+    },
+  ],
+  "stats": {
+    "essays": 2,
+    "media": 2,
+    "notes": 1,
+    "quotes": 1,
+  },
+}
+`;
+
+exports[`getLibraryBooks > matches the recorded payload shape 1`] = `
+{
+  "author": "Friedrich Nietzsche",
+  "author_born": "1844",
+  "author_died": "1900",
+  "author_id": "11111111-1111-4111-8111-000000000010",
+  "citation_count": 2,
+  "cover_url": "books/bge/cover.jpg",
+  "created_at": "2026-01-01T00:00:00.000Z",
+  "decade": "pre-1900",
+  "description": null,
+  "has_pdf": 1,
+  "id": "11111111-1111-4111-8111-000000000020",
+  "isbn": null,
+  "last_activity_at": "2026-02-01T00:00:00.000Z",
+  "media_count": 2,
+  "note_count": 1,
+  "originally_published": "1886",
+  "pdf_page_offset": 12,
+  "pdf_url": "books/bge/bge.pdf",
+  "quote_count": 1,
+  "title": "Beyond Good and Evil",
+  "updated_at": "2026-01-01T00:00:00.000Z",
+}
+`;
