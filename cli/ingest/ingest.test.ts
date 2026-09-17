@@ -5,7 +5,7 @@ import {
 	catalogueTestDatabase,
 	ids,
 } from '../../packages/core/test/fixture.js';
-import { renderSqlFile, renderStatement } from './sql-file.js';
+import { renderSqlFile, renderStatement } from '../sql-file.js';
 import { extractPageTexts } from './pdf-text.js';
 import { RowBudget } from './run.js';
 

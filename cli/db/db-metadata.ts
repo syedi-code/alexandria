@@ -19,10 +19,12 @@
  */
 
 import 'dotenv/config';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
-
-const execAsync = promisify(exec);
+import {
+	ENVIRONMENTS,
+	isEnvironment,
+	query,
+	type Environment,
+} from '../wrangler.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -71,33 +73,13 @@ export interface DatabaseMetadata {
 }
 
 interface Options {
-	env: 'local' | 'staging' | 'production';
+	env: Environment;
 	json: boolean;
-}
-
-interface D1QueryResult<T> {
-	success: boolean;
-	results: T[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
-
-const ENV_CONFIG = {
-	local: {
-		database: 'antisocial-media',
-		flags: '--local',
-	},
-	staging: {
-		database: 'antisocial-media-staging',
-		flags: '--remote',
-	},
-	production: {
-		database: 'antisocial-media',
-		flags: '--remote',
-	},
-} as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -113,8 +95,8 @@ function parseArgs(): Options {
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
 			case '--env': {
-				const env = args[++i] as Options['env'];
-				if (!['local', 'staging', 'production'].includes(env)) {
+				const env = args[++i];
+				if (!isEnvironment(env)) {
 					console.error(`Invalid environment: ${env}`);
 					console.error('Valid options: local, staging, production');
 					process.exit(1);
@@ -150,163 +132,87 @@ Examples:
 	return options;
 }
 
-async function executeQuery<T>(
-	database: string,
-	flags: string,
-	query: string
-): Promise<D1QueryResult<T>[]> {
-	// Normalize whitespace and escape for shell
-	const normalizedQuery = query.replace(/\s+/g, ' ').trim();
-	const escapedQuery = normalizedQuery.replace(/"/g, '\\"');
-	const command = `npx wrangler d1 execute ${database} ${flags} --json --command="${escapedQuery}"`;
-
-	try {
-		const { stdout } = await execAsync(command, {
-			maxBuffer: 10 * 1024 * 1024,
-		});
-		return JSON.parse(stdout);
-	} catch {
-		// Return empty result on error (table might not exist)
-		return [{ success: false, results: [] }];
-	}
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Metadata Collection
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function getTables(
-	database: string,
-	flags: string
-): Promise<TableInfo[]> {
-	const query = `
-		SELECT name, sql FROM sqlite_master 
-		WHERE type = 'table' 
-		AND name NOT LIKE 'sqlite_%' 
-		AND name NOT LIKE '_cf_%'
-		AND name NOT LIKE 'd1_%'
-		ORDER BY name
-	`;
+async function getTables(env: Environment): Promise<TableInfo[]> {
+	const rows = await query<{ name: string; sql: string }>(env, 'db', {
+		sql: `SELECT name, sql FROM sqlite_master
+		       WHERE type = 'table'
+		         AND name NOT LIKE 'sqlite_%'
+		         AND name NOT LIKE '_cf_%'
+		         AND name NOT LIKE 'd1_%'
+		       ORDER BY name`,
+	});
 
-	const result = await executeQuery<{ name: string; sql: string }>(
-		database,
-		flags,
-		query
-	);
 	const tables: TableInfo[] = [];
-
-	for (const row of result[0]?.results || []) {
-		// Get column info for each table
-		const columnsResult = await executeQuery<ColumnInfo>(
-			database,
-			flags,
-			`PRAGMA table_info(${row.name})`
-		);
-
+	for (const row of rows) {
 		tables.push({
 			name: row.name,
 			sql: row.sql,
-			columns: columnsResult[0]?.results || [],
+			columns: await query<ColumnInfo>(env, 'db', {
+				sql: `PRAGMA table_info(${row.name})`,
+			}),
 		});
 	}
-
 	return tables;
 }
 
-async function getIndexes(
-	database: string,
-	flags: string
-): Promise<IndexInfo[]> {
-	const query = `
-		SELECT name, tbl_name, sql FROM sqlite_master 
-		WHERE type = 'index' 
-		AND name NOT LIKE 'sqlite_%'
-		AND name NOT LIKE '_cf_%'
-		ORDER BY tbl_name, name
-	`;
-
-	const result = await executeQuery<IndexInfo>(database, flags, query);
-	return result[0]?.results || [];
-}
+const getIndexes = (env: Environment): Promise<IndexInfo[]> =>
+	query<IndexInfo>(env, 'db', {
+		sql: `SELECT name, tbl_name, sql FROM sqlite_master
+		       WHERE type = 'index'
+		         AND name NOT LIKE 'sqlite_%'
+		         AND name NOT LIKE '_cf_%'
+		       ORDER BY tbl_name, name`,
+	});
 
 async function getRowCounts(
-	database: string,
-	flags: string,
+	env: Environment,
 	tables: TableInfo[]
 ): Promise<RowCounts> {
 	const counts: RowCounts = {};
-
 	for (const table of tables) {
-		const result = await executeQuery<{ count: number }>(
-			database,
-			flags,
-			`SELECT COUNT(*) as count FROM ${table.name}`
-		);
-		counts[table.name] = result[0]?.results[0]?.count ?? 0;
+		const [row] = await query<{ count: number }>(env, 'db', {
+			sql: `SELECT COUNT(*) as count FROM ${table.name}`,
+		});
+		counts[table.name] = row?.count ?? 0;
 	}
-
 	return counts;
 }
 
-async function getDataFreshness(
-	database: string,
-	flags: string
-): Promise<DataFreshness> {
-	const freshness: DataFreshness = {};
+async function getDataFreshness(env: Environment): Promise<DataFreshness> {
+	const latest = async (table: string, column: string) => {
+		const [row] = await query<{ latest: string | null }>(env, 'db', {
+			sql: `SELECT MAX(${column}) as latest FROM ${table}`,
+		});
+		return row?.latest || undefined;
+	};
+	const [works] = await query<{ count: number }>(env, 'db', {
+		sql: `SELECT COUNT(*) as count FROM works WHERE deleted_at IS NULL`,
+	});
 
-	// Latest event
-	const eventResult = await executeQuery<{ latest: string }>(
-		database,
-		flags,
-		`SELECT MAX("when") as latest FROM event_ledger`
-	);
-	freshness.latestEvent = eventResult[0]?.results[0]?.latest || undefined;
-
-	// Latest weather
-	const weatherResult = await executeQuery<{ latest: string }>(
-		database,
-		flags,
-		`SELECT MAX(date) as latest FROM weather_daily`
-	);
-	freshness.latestWeather = weatherResult[0]?.results[0]?.latest || undefined;
-
-	// Latest news
-	const newsResult = await executeQuery<{ latest: string }>(
-		database,
-		flags,
-		`SELECT MAX(date) as latest FROM news_daily`
-	);
-	freshness.latestNews = newsResult[0]?.results[0]?.latest || undefined;
-
-	// Book count
-	const bookResult = await executeQuery<{ count: number }>(
-		database,
-		flags,
-		`SELECT COUNT(*) as count FROM books`
-	);
-	freshness.bookCount = bookResult[0]?.results[0]?.count ?? 0;
-
-	return freshness;
+	return {
+		latestEvent: await latest('event_ledger', '"when"'),
+		latestWeather: await latest('weather_daily', 'date'),
+		latestNews: await latest('news_daily', 'date'),
+		bookCount: works?.count ?? 0,
+	};
 }
 
 export async function collectMetadata(
-	env: Options['env']
+	env: Environment
 ): Promise<DatabaseMetadata> {
-	const config = ENV_CONFIG[env];
-	const { database, flags } = config;
-
-	const tables = await getTables(database, flags);
-	const indexes = await getIndexes(database, flags);
-	const rowCounts = await getRowCounts(database, flags, tables);
-	const freshness = await getDataFreshness(database, flags);
+	const tables = await getTables(env);
 
 	return {
 		environment: env,
-		database,
+		database: ENVIRONMENTS[env].db,
 		tables,
-		indexes,
-		rowCounts,
-		freshness,
+		indexes: await getIndexes(env),
+		rowCounts: await getRowCounts(env, tables),
+		freshness: await getDataFreshness(env),
 		collectedAt: new Date().toISOString(),
 	};
 }

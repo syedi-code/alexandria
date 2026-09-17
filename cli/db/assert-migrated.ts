@@ -13,25 +13,7 @@
  */
 
 import 'dotenv/config';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
-import path from 'node:path';
-
-// wrangler resolves database names and --env from the worker's wrangler.toml.
-const WORKER_DIR = path.resolve(import.meta.dirname, '../../apps/worker');
-
-const execAsync = promisify(exec);
-
-const ENV_CONFIG = {
-	local: { database: 'antisocial-media', flags: '--local' },
-	staging: {
-		database: 'antisocial-media-staging',
-		flags: '--env staging --remote',
-	},
-	production: { database: 'antisocial-media', flags: '--remote' },
-} as const;
-
-type Environment = keyof typeof ENV_CONFIG;
+import { isEnvironment, query } from '../wrangler.js';
 
 /**
  * Tables the current code reads. Add one here in the same commit that starts
@@ -64,26 +46,19 @@ const REQUIRED_TABLES = [
 async function main(): Promise<void> {
 	const args = process.argv.slice(2);
 	const envIndex = args.indexOf('--env');
-	const env = (envIndex >= 0 ? args[envIndex + 1] : '') as Environment;
+	const env = envIndex >= 0 ? args[envIndex + 1] : '';
 
-	if (!ENV_CONFIG[env]) {
+	if (!isEnvironment(env)) {
 		console.error(
 			'Usage: npx tsx cli/db/assert-migrated.ts --env <local|staging|production>'
 		);
 		process.exit(2);
 	}
 
-	const { database, flags } = ENV_CONFIG[env];
-	const { stdout } = await execAsync(
-		`npx wrangler d1 execute ${database} ${flags} --json ` +
-			`--command="SELECT name FROM sqlite_master WHERE type='table'"`,
-		{ maxBuffer: 8 * 1024 * 1024, cwd: WORKER_DIR }
-	);
-
-	const parsed = JSON.parse(stdout) as { results: { name: string }[] }[];
-	const present = new Set(
-		parsed.flatMap((r) => r.results ?? []).map((r) => r.name)
-	);
+	const tables = await query<{ name: string }>(env, 'db', {
+		sql: `SELECT name FROM sqlite_master WHERE type = 'table'`,
+	});
+	const present = new Set(tables.map((table) => table.name));
 	const missing = REQUIRED_TABLES.filter((t) => !present.has(t));
 
 	if (missing.length === 0) {

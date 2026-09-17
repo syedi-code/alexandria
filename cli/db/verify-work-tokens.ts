@@ -16,43 +16,9 @@
  */
 
 import 'dotenv/config';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
-import path from 'node:path';
-
-// wrangler resolves database names and --env from the worker's wrangler.toml.
-const WORKER_DIR = path.resolve(import.meta.dirname, '../../apps/worker');
-
-const execAsync = promisify(exec);
-
-const ENV_CONFIG = {
-	local: { database: 'antisocial-media', flags: '--local' },
-	staging: {
-		database: 'antisocial-media-staging',
-		flags: '--env staging --remote',
-	},
-	production: { database: 'antisocial-media', flags: '--remote' },
-} as const;
-
-type Environment = keyof typeof ENV_CONFIG;
+import { isEnvironment, query } from '../wrangler.js';
 
 const TOKEN_RE = /\[\[(book|book_cover):([0-9a-fA-F-]{36})/g;
-
-interface D1QueryResult<T> {
-	success: boolean;
-	results: T[];
-}
-
-async function query<T>(env: Environment, sql: string): Promise<T[]> {
-	const { database, flags } = ENV_CONFIG[env];
-	const escaped = sql.replace(/\s+/g, ' ').trim().replace(/"/g, '\\"');
-	const { stdout } = await execAsync(
-		`npx wrangler d1 execute ${database} ${flags} --json --command="${escaped}"`,
-		{ maxBuffer: 64 * 1024 * 1024, cwd: WORKER_DIR }
-	);
-	const parsed = JSON.parse(stdout) as D1QueryResult<T>[];
-	return parsed.flatMap((r) => r.results ?? []);
-}
 
 interface Citation {
 	essayId: string;
@@ -63,33 +29,31 @@ interface Citation {
 async function main(): Promise<void> {
 	const args = process.argv.slice(2);
 	const envIndex = args.indexOf('--env');
-	const env = (envIndex >= 0 ? args[envIndex + 1] : '') as Environment;
+	const env = envIndex >= 0 ? args[envIndex + 1] : '';
 	const asJson = args.includes('--json');
 
-	if (!ENV_CONFIG[env]) {
+	if (!isEnvironment(env)) {
 		console.error(
 			'Usage: npx tsx cli/db/verify-work-tokens.ts --env <local|staging|production> [--json]'
 		);
 		process.exit(2);
 	}
 
-	const essays = await query<{ id: string; content: string }>(
-		env,
-		'SELECT id, content FROM essays'
-	);
+	const essays = await query<{ id: string; content: string }>(env, 'db', {
+		sql: 'SELECT id, content FROM essays',
+	});
 	// Before 0026_works.sql the table is still `books`; the check has to run on
 	// both sides of that migration to be worth anything.
-	const tables = await query<{ name: string }>(
-		env,
-		"SELECT name FROM sqlite_master WHERE type='table' AND name IN ('works', 'books')"
-	);
+	const tables = await query<{ name: string }>(env, 'db', {
+		sql: `SELECT name FROM sqlite_master
+		       WHERE type = 'table' AND name IN ('works', 'books')`,
+	});
 	const workTable = tables.some((t) => t.name === 'works')
 		? 'works'
 		: 'books';
-	const works = await query<{ id: string }>(
-		env,
-		`SELECT id FROM ${workTable}`
-	);
+	const works = await query<{ id: string }>(env, 'db', {
+		sql: `SELECT id FROM ${workTable}`,
+	});
 	const known = new Set(works.map((w) => w.id));
 
 	const citations: Citation[] = [];

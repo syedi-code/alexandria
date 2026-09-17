@@ -6,6 +6,7 @@
 	"references": [
 		{ "path": "./packages/core" },
 		{ "path": "./packages/core/tsconfig.test.json" },
-		{ "path": "./apps/worker" }
+		{ "path": "./apps/worker" },
+		{ "path": "./cli" }
 	]
 }

@@ -10,7 +10,7 @@ import { renderSqlFile, renderStatement } from './sql-file.js';
 const run = promisify(execFile);
 
 /** wrangler resolves database names, buckets and --env from the worker's wrangler.toml. */
-const WORKER_DIR = path.resolve(import.meta.dirname, '../../apps/worker');
+const WORKER_DIR = path.resolve(import.meta.dirname, '../apps/worker');
 
 /**
  * Wrangler's entry script, run with node directly rather than through npx: no
@@ -111,13 +111,13 @@ const d1 = (env: Environment, database: Database, ...args: string[]) => {
 export async function query<T>(
 	env: Environment,
 	database: Database,
-	statement: SqlStatement
+	{ sql, params = [] }: { sql: string; params?: SqlStatement['params'] }
 ): Promise<T[]> {
 	const stdout = await d1(
 		env,
 		database,
 		'--command',
-		renderStatement(statement)
+		renderStatement({ sql, params })
 	);
 	return parseResults(stdout).flatMap((r) => (r.results ?? []) as T[]);
 }
@@ -165,6 +165,25 @@ export const execute = (
 		await writeFile(file, renderSqlFile(statements));
 		return executeSqlFile(env, database, file);
 	});
+
+/**
+ * Dumps a remote database to a SQL file. D1 refuses to export a database that
+ * contains a virtual table, which is why the page index lives in SEARCH and is
+ * rebuilt rather than backed up.
+ */
+export const exportDatabase = (
+	env: Environment,
+	database: Database,
+	file: string
+) =>
+	wrangler([
+		'd1',
+		'export',
+		ENVIRONMENTS[env][database],
+		...ENVIRONMENTS[env].flags,
+		'--output',
+		file,
+	]);
 
 export const downloadObject = (env: Environment, key: string) =>
 	inTempDir(async (dir) => {

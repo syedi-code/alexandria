@@ -35,8 +35,6 @@
 		"extract:essays": "npm run extract:essays -w @alexandria/cli --",
 		"pages:extract": "npm run pages:extract -w @alexandria/cli --",
 		"pages:index": "npm run pages:index -w @alexandria/cli --",
-		"seed:authors": "npm run seed:authors -w @alexandria/cli --",
-		"seed:book-relationships": "npm run seed:book-relationships -w @alexandria/cli --",
 		"backup": "npm run backup:prod -w @alexandria/cli",
 		"backup:staging": "npm run backup:staging -w @alexandria/cli",
 		"backup:prod": "npm run backup:prod -w @alexandria/cli",

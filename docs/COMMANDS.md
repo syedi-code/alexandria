@@ -55,9 +55,9 @@ dumps a table to JSON.
 
 ### Pages and search
 
-| Command                                     | Description                                                                 |
-| ------------------------------------------- | --------------------------------------------------------------------------- |
-| `npm run pages:extract -- --env production` | Extract each PDF's text layer into `transcriptions` and `pages`.            |
+| Command                                     | Description                                                                  |
+| ------------------------------------------- | ---------------------------------------------------------------------------- |
+| `npm run pages:extract -- --env production` | Extract each PDF's text layer into `transcriptions` and `pages`.             |
 | `npm run pages:index -- --env production`   | Build the FTS index in the SEARCH database from `pages`. Creates its schema. |
 
 Both are resumable and stop before a document that would cross `--budget` rows

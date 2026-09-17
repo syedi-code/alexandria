@@ -14,23 +14,9 @@
  */
 
 import 'dotenv/config';
-import { execSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { isEnvironment, query, type Environment } from '../wrangler.js';
 
-const ENV_CONFIG = {
-	staging: {
-		database: 'antisocial-media-staging',
-		flags: '--env staging --remote',
-	},
-	production: {
-		database: 'antisocial-media',
-		flags: '--remote',
-	},
-} as const;
-
-type Environment = keyof typeof ENV_CONFIG;
-
-function main(): void {
+async function main(): Promise<void> {
 	const args = process.argv.slice(2);
 
 	let env: Environment | null = null;
@@ -39,7 +25,7 @@ function main(): void {
 	for (let i = 0; i < args.length; i++) {
 		if (args[i] === '--env' && args[i + 1]) {
 			const envArg = args[++i];
-			if (envArg === 'staging' || envArg === 'production') {
+			if (isEnvironment(envArg) && envArg !== 'local') {
 				env = envArg;
 			} else {
 				console.error(`❌ Invalid environment: ${envArg}`);
@@ -72,35 +58,15 @@ Examples:
 		process.exit(1);
 	}
 
-	const config = ENV_CONFIG[env];
-
-	// Build the SQL query
-	const sql = email
-		? `SELECT id, email, first_seen, last_seen FROM users WHERE email = '${email.replace(/'/g, "''")}'`
-		: `SELECT id, email, first_seen, last_seen FROM users ORDER BY first_seen ASC`;
-
-	// Run from apps/worker for wrangler.toml resolution
-	const scriptDir = new URL('.', import.meta.url).pathname.replace(
-		/^\/([A-Z]:)/,
-		'$1'
-	);
-	const workerDir = resolve(scriptDir, '..', '..', 'apps', 'worker');
-
-	const command = `npx wrangler d1 execute ${config.database} ${config.flags} --json --command="${sql}"`;
-
 	console.log(`\n🔍 Querying users table on ${env}...\n`);
 
 	try {
-		const { CLOUDFLARE_API_TOKEN: _, ...cleanEnv } = process.env;
-		const output = execSync(command, {
-			encoding: 'utf-8',
-			cwd: workerDir,
-			env: { ...cleanEnv, WRANGLER_SEND_METRICS: 'false' },
-			maxBuffer: 10 * 1024 * 1024,
+		const results = await query<{ id: string; email: string }>(env, 'db', {
+			sql: `SELECT id, email, first_seen, last_seen FROM users
+			       ${email ? 'WHERE email = ?' : ''}
+			       ORDER BY first_seen ASC`,
+			params: email ? [email] : [],
 		});
-
-		const parsed = JSON.parse(output);
-		const results = parsed[0]?.results || [];
 
 		if (results.length === 0) {
 			console.log('⚠️  No users found in the database.');
@@ -132,15 +98,9 @@ Examples:
 				'⚠️  Note: Your production UUID will be DIFFERENT — run this again with --env production after deploying there.'
 			);
 		}
-	} catch (error: unknown) {
-		const execError = error as {
-			stderr?: string;
-			stdout?: string;
-			message?: string;
-		};
+	} catch (error) {
 		console.error('❌ Failed to query database');
-		if (execError.stderr) console.error(execError.stderr);
-		if (execError.message) console.error(execError.message);
+		console.error(error instanceof Error ? error.message : error);
 		process.exit(1);
 	}
 }

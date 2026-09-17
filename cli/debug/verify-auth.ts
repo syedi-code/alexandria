@@ -18,11 +18,9 @@ import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
 
 // Load .env from repo root (not cwd, which may be cli/)
-const scriptDir = fileURLToPath(new URL('.', import.meta.url));
-const repoRoot = resolve(scriptDir, '..', '..');
+const repoRoot = resolve(import.meta.dirname, '..', '..');
 config({ path: join(repoRoot, '.env') });
 
 const ENV_CONFIG = {
@@ -31,11 +29,11 @@ const ENV_CONFIG = {
 		label: 'Local',
 	},
 	staging: {
-		workerUrl: 'https://staging.antisocial-media.pages.dev',
+		workerUrl: 'https://antisocial-worker-staging.iysyed01.workers.dev',
 		label: 'Staging',
 	},
 	production: {
-		workerUrl: 'https://antisocial-media.pages.dev',
+		workerUrl: 'https://alexandria.socialeating.studio',
 		label: 'Production',
 	},
 } as const;
@@ -83,7 +81,11 @@ async function main(): Promise<void> {
 	for (let i = 0; i < args.length; i++) {
 		if (args[i] === '--env' && args[i + 1]) {
 			const envArg = args[++i] as string;
-			if (envArg === 'local' || envArg === 'staging' || envArg === 'production') {
+			if (
+				envArg === 'local' ||
+				envArg === 'staging' ||
+				envArg === 'production'
+			) {
 				env = envArg;
 			} else {
 				console.error(`❌ Invalid environment: ${envArg}`);
@@ -136,7 +138,10 @@ Examples:
 	if (orgToken) {
 		tokenPayload = decodeJwtPayload(orgToken);
 		if (!tokenPayload) {
-			fail('Org token is malformed (cannot decode JWT payload)', 'Re-authenticate via cloudflared');
+			fail(
+				'Org token is malformed (cannot decode JWT payload)',
+				'Re-authenticate via cloudflared'
+			);
 			tokenExpired = true;
 		} else {
 			const exp = tokenPayload['exp'] as number | undefined;
@@ -148,7 +153,9 @@ Examples:
 				);
 				tokenExpired = true;
 			} else {
-				const expDate = exp ? new Date(exp * 1000).toISOString() : 'unknown';
+				const expDate = exp
+					? new Date(exp * 1000).toISOString()
+					: 'unknown';
 				pass(`Org token not expired (expires: ${expDate})`);
 			}
 		}
@@ -167,10 +174,16 @@ Examples:
 			).trim();
 			if (appToken) {
 				const appPayload = decodeJwtPayload(appToken);
-				const aud = Array.isArray(appPayload?.['aud']) ? (appPayload!['aud'] as string[])[0] : String(appPayload?.['aud'] ?? '');
+				const aud = Array.isArray(appPayload?.['aud'])
+					? (appPayload!['aud'] as string[])[0]
+					: String(appPayload?.['aud'] ?? '');
 				pass(`App token obtained (aud: ${aud?.slice(0, 12)}...)`);
 			} else {
-				fail('cloudflared returned empty app token', 'Re-authenticate: cloudflared access login ' + config.workerUrl);
+				fail(
+					'cloudflared returned empty app token',
+					'Re-authenticate: cloudflared access login ' +
+						config.workerUrl
+				);
 			}
 		} catch {
 			fail(
@@ -189,7 +202,9 @@ Examples:
 			if (iss === teamDomain || iss?.includes('cloudflareaccess.com')) {
 				pass(`Token issuer: ${iss}`);
 			} else {
-				fail(`Token issuer mismatch: got "${iss}", expected "${teamDomain}"`);
+				fail(
+					`Token issuer mismatch: got "${iss}", expected "${teamDomain}"`
+				);
 			}
 		} else if (iss) {
 			pass(`Token issuer: ${iss}`);
@@ -197,21 +212,32 @@ Examples:
 			fail('Token missing issuer claim');
 		}
 	} else {
-		skip('Token issuer check', tokenExpired ? 'token expired or missing' : 'no token payload');
+		skip(
+			'Token issuer check',
+			tokenExpired ? 'token expired or missing' : 'no token payload'
+		);
 	}
 
 	// Check 4: JWKS endpoint reachable
 	if (teamDomain) {
 		const jwksUrl = `${teamDomain}/cdn-cgi/access/certs`;
 		try {
-			const response = await fetch(jwksUrl, { signal: AbortSignal.timeout(5000) });
+			const response = await fetch(jwksUrl, {
+				signal: AbortSignal.timeout(5000),
+			});
 			if (response.ok) {
 				pass(`JWKS endpoint reachable: ${jwksUrl}`);
 			} else {
-				fail(`JWKS endpoint returned ${response.status}: ${jwksUrl}`, 'Check TEAM_DOMAIN in .env');
+				fail(
+					`JWKS endpoint returned ${response.status}: ${jwksUrl}`,
+					'Check TEAM_DOMAIN in .env'
+				);
 			}
 		} catch (err) {
-			fail(`JWKS endpoint unreachable: ${jwksUrl}`, `Error: ${String(err)}`);
+			fail(
+				`JWKS endpoint unreachable: ${jwksUrl}`,
+				`Error: ${String(err)}`
+			);
 		}
 	} else {
 		skip('JWKS endpoint check', 'TEAM_DOMAIN not set in .env');
@@ -220,13 +246,17 @@ Examples:
 	// Check 5: Worker health check
 	const healthUrl = `${config.workerUrl}/health`;
 	try {
-		const response = await fetch(healthUrl, { signal: AbortSignal.timeout(8000) });
+		const response = await fetch(healthUrl, {
+			signal: AbortSignal.timeout(8000),
+		});
 		if (response.ok) {
 			pass(`Worker health check: ${healthUrl} (${response.status})`);
 		} else {
 			fail(
 				`Worker returned ${response.status}: ${healthUrl}`,
-				env === 'local' ? 'Ensure wrangler dev is running: npm run dev:worker' : 'Check deployment status'
+				env === 'local'
+					? 'Ensure wrangler dev is running: npm run dev:worker'
+					: 'Check deployment status'
 			);
 		}
 	} catch (err) {
@@ -258,24 +288,34 @@ Examples:
 					`CF Access edge rejected the token. Audience mismatch? Location: ${location}`
 				);
 			} else {
-			const body = await response.json() as Record<string, unknown>;
-			if (response.ok && body['user']) {
-				const userData = body['user'] as { email?: string; role?: string };
-				pass(`Auth chain: GET /api/me → ${response.status} (user: ${userData.email}, role: ${userData.role})`);
-			} else {
-				const code = (body as { code?: string })['code'] ?? 'UNKNOWN';
-				const hint = (body as { hint?: string })['hint'] ?? 'No hint';
-				fail(
-					`Auth chain: GET /api/me → ${response.status} (code: ${code})`,
-					hint
-				);
-			}
+				const body = (await response.json()) as Record<string, unknown>;
+				if (response.ok && body['user']) {
+					const userData = body['user'] as {
+						email?: string;
+						role?: string;
+					};
+					pass(
+						`Auth chain: GET /api/me → ${response.status} (user: ${userData.email}, role: ${userData.role})`
+					);
+				} else {
+					const code =
+						(body as { code?: string })['code'] ?? 'UNKNOWN';
+					const hint =
+						(body as { hint?: string })['hint'] ?? 'No hint';
+					fail(
+						`Auth chain: GET /api/me → ${response.status} (code: ${code})`,
+						hint
+					);
+				}
 			}
 		} catch (err) {
 			fail(`Auth chain: GET /api/me failed`, `Error: ${String(err)}`);
 		}
 	} else {
-		skip('End-to-end auth chain test', tokenExpired ? 'fix the token issue above first' : 'token missing');
+		skip(
+			'End-to-end auth chain test',
+			tokenExpired ? 'fix the token issue above first' : 'token missing'
+		);
 	}
 
 	// Summary
@@ -285,7 +325,9 @@ Examples:
 	if (failCount === 0) {
 		console.log(`\x1b[32mResult: All ${total} checks passed\x1b[0m`);
 	} else {
-		console.log(`\x1b[31mResult: ${failCount} of ${total} checks failed\x1b[0m`);
+		console.log(
+			`\x1b[31mResult: ${failCount} of ${total} checks failed\x1b[0m`
+		);
 		process.exit(1);
 	}
 }

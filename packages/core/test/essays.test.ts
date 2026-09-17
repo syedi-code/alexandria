@@ -30,10 +30,20 @@ describe('essay references over works', () => {
 				`INSERT INTO essay_references (id, essay_id, entity_type, entity_id, page, position, params)
 				 VALUES (?, ?, 'quote', ?, NULL, 2, NULL)`
 			)
-			.run(`${ids.essayCoCitation}:2`, ids.essayCoCitation, ids.quoteBgeCurrent);
+			.run(
+				`${ids.essayCoCitation}:2`,
+				ids.essayCoCitation,
+				ids.quoteBgeCurrent
+			);
 
-		const essay = (await getEssayById(db.d1, ids.essayCoCitation, ids.userAdmin))!;
-		const quoteRef = essay.references.find((r) => r.entity_type === 'quote')!;
+		const essay = (await getEssayById(
+			db.d1,
+			ids.essayCoCitation,
+			ids.userAdmin
+		))!;
+		const quoteRef = essay.references.find(
+			(r) => r.entity_type === 'quote'
+		)!;
 		expect(quoteRef.quote_text).toBe('He who fights with monsters.');
 		expect(quoteRef.book_title).toBe('Beyond Good and Evil');
 		expect(quoteRef.book_author).toBe('Friedrich Nietzsche');

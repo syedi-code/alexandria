@@ -29,6 +29,11 @@ jobs:
             # holding the seam — nothing fails at runtime when it is crossed.
             - run: npm run lint
 
+            # CONTRIBUTING tells a contributor to run `npm run format`. Without
+            # this, drift accumulates and that command rewrites files nobody
+            # touched, burying their diff.
+            - run: npx prettier --check .
+
             - run: npx tsc -b
 
             - run: npm test
