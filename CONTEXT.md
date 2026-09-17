@@ -50,20 +50,19 @@ _Avoid_: author, writer
 or translation. Pagination belongs here, not to the Work: "page 47" means
 nothing until you know which Document. _Avoid_: file, edition, copy, upload
 
-**Transcription**: One extraction of a Document's text — by reading its PDF
-text layer, or later by a model reading page images. A Document may have
-several; one is current. They are compared, never merged. _Avoid_: OCR, parse,
-text dump
+**Transcription**: One extraction of a Document's text — by reading its PDF text
+layer, or later by a model reading page images. A Document may have several; one
+is current. They are compared, never merged. _Avoid_: OCR, parse, text dump
 
 **Page**: One page of one Transcription: its text, numbered by its position in
 the PDF. The number printed on the paper is derived from the Document's page
 offset. _Avoid_: sheet, leaf, scan
 
 **Citation**: A pointer from a claim to a Page, carrying the verbatim words the
-claim relies on, and whether those words were found there: verified,
-unverified, or unverifiable (the page has no text). Not a Quote — a Quote is
-Writing someone chose to keep; a Citation is evidence an answer had to show.
-_Avoid_: reference, source, footnote
+claim relies on, and whether those words were found there: verified, unverified,
+or unverifiable (the page has no text). Not a Quote — a Quote is Writing someone
+chose to keep; a Citation is evidence an answer had to show. _Avoid_: reference,
+source, footnote
 
 ### Conversations
 
@@ -72,8 +71,8 @@ cited answers. _Avoid_: chat, thread, session
 
 **Page handle**: The short name — P1, P2, … — a Page gets the first time a
 Conversation's tools show it to a model. A Citation in an answer names its Page
-by handle, so it can only point at a Page the model was actually shown.
-_Avoid_: page id, reference
+by handle, so it can only point at a Page the model was actually shown. _Avoid_:
+page id, reference
 
 ### Genealogy _(future separate app)_
 

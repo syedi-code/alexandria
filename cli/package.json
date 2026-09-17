@@ -23,8 +23,6 @@
 		"extract:quotes": "tsx utils/extract-quotes.ts",
 		"extract:sleep": "tsx utils/extract-sleep.ts",
 		"extract:threads": "tsx utils/extract-threads.ts",
-		"seed:authors": "tsx utils/seed-authors.ts",
-		"seed:book-relationships": "tsx utils/seed-book-relationships.ts",
 		"db:admin-id": "tsx db/get-admin-id.ts",
 		"db:status": "tsx db/db-metadata.ts",
 		"db:status:local": "tsx db/db-metadata.ts --env local",

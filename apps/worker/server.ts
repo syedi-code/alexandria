@@ -36,7 +36,10 @@ app.use('/api/*', async (c, next) => {
 	await next();
 	c.header('X-Content-Type-Options', 'nosniff');
 	c.header('X-Frame-Options', 'DENY');
-	c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+	c.header(
+		'Strict-Transport-Security',
+		'max-age=31536000; includeSubDomains'
+	);
 });
 
 // Handle OPTIONS preflight explicitly (bypass auth) - let CORS middleware handle headers

@@ -22,29 +22,23 @@
  */
 
 import 'dotenv/config';
-import { exec } from 'node:child_process';
+import {
+	executeSqlFile,
+	isEnvironment,
+	query,
+	type Environment,
+} from '../wrangler.js';
 import { createInterface } from 'node:readline';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { promisify } from 'node:util';
 
-const execAsync = promisify(exec);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..', '..');
-const workerDir = resolve(repoRoot, 'apps', 'worker');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
-
-const ENV_CONFIG = {
-	local: { database: 'antisocial-media', flags: '--local' },
-	staging: { database: 'antisocial-media-staging', flags: '--remote' },
-	production: { database: 'antisocial-media', flags: '--remote' },
-} as const;
-
-type Environment = keyof typeof ENV_CONFIG;
 
 const MIGRATABLE_TYPES = ['note', 'quote', 'media', 'link', 'sleep'] as const;
 type MigratableType = (typeof MIGRATABLE_TYPES)[number];
@@ -67,8 +61,8 @@ function parseArgs(): Options {
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
 			case '--env': {
-				const env = args[++i] as Environment;
-				if (!ENV_CONFIG[env]) {
+				const env = args[++i];
+				if (!isEnvironment(env)) {
 					console.error(`Invalid environment: ${env}`);
 					process.exit(1);
 				}
@@ -124,42 +118,6 @@ async function confirm(message: string): Promise<boolean> {
 			rl.close();
 			resolve(answer.toLowerCase() === 'y');
 		});
-	});
-}
-
-interface D1QueryResult<T> {
-	success: boolean;
-	results: T[];
-}
-
-async function executeQuery<T>(
-	database: string,
-	flags: string,
-	query: string
-): Promise<T[]> {
-	const normalizedQuery = query.replace(/\s+/g, ' ').trim();
-	const escapedQuery = normalizedQuery.replace(/"/g, '\\"');
-	const command = `npx wrangler d1 execute ${database} ${flags} --json --command="${escapedQuery}"`;
-
-	const { stdout } = await execAsync(command, {
-		cwd: workerDir,
-		maxBuffer: 100 * 1024 * 1024,
-	});
-
-	const parsed: D1QueryResult<T>[] = JSON.parse(stdout);
-	return parsed[0]?.results || [];
-}
-
-async function executeSql(
-	database: string,
-	flags: string,
-	sqlFile: string
-): Promise<void> {
-	const command = `npx wrangler d1 execute ${database} ${flags} --file="${sqlFile}"`;
-
-	await execAsync(command, {
-		cwd: workerDir,
-		maxBuffer: 100 * 1024 * 1024,
 	});
 }
 
@@ -275,27 +233,23 @@ const TARGET_TABLES: Record<MigratableType, string> = {
 
 async function main(): Promise<void> {
 	const options = parseArgs();
-	const config = ENV_CONFIG[options.env];
+	const env = options.env;
 	const types = options.type ? [options.type] : [...MIGRATABLE_TYPES];
 
 	console.log(`\n📦 Migrate event_ledger → denormalized tables`);
-	console.log(`   Environment: ${options.env} (${config.database})`);
+	console.log(`   Environment: ${options.env}`);
 	console.log(`   Types: ${types.join(', ')}`);
 	if (options.dryRun) console.log(`   Mode: DRY RUN`);
 	console.log();
 
 	// Fetch counts first
 	for (const type of types) {
-		const rows = await executeQuery<{ count: number }>(
-			config.database,
-			config.flags,
-			`SELECT COUNT(*) as count FROM event_ledger WHERE type = '${type}'`
-		);
-		const destRows = await executeQuery<{ count: number }>(
-			config.database,
-			config.flags,
-			`SELECT COUNT(*) as count FROM ${TARGET_TABLES[type]}`
-		);
+		const rows = await query<{ count: number }>(env, 'db', {
+			sql: `SELECT COUNT(*) as count FROM event_ledger WHERE type = '${type}'`,
+		});
+		const destRows = await query<{ count: number }>(env, 'db', {
+			sql: `SELECT COUNT(*) as count FROM ${TARGET_TABLES[type]}`,
+		});
 		console.log(
 			`   ${type}: ${rows[0]?.count ?? 0} events in ledger → ${TARGET_TABLES[type]} (${destRows[0]?.count ?? 0} existing)`
 		);
@@ -320,11 +274,9 @@ async function main(): Promise<void> {
 		console.log(`\n── Migrating ${type} ──`);
 
 		// Fetch all events of this type
-		const events = await executeQuery<EventRow>(
-			config.database,
-			config.flags,
-			`SELECT payload FROM event_ledger WHERE type = '${type}' ORDER BY "when" ASC`
-		);
+		const events = await query<EventRow>(env, 'db', {
+			sql: `SELECT payload FROM event_ledger WHERE type = '${type}' ORDER BY "when" ASC`,
+		});
 
 		if (events.length === 0) {
 			console.log(`   No ${type} events found, skipping.`);
@@ -379,7 +331,7 @@ ${statements.join('\n')}
 		} else {
 			console.log(`   Executing ${statements.length} inserts...`);
 			try {
-				await executeSql(config.database, config.flags, sqlFile);
+				await executeSqlFile(env, 'db', sqlFile);
 				console.log(
 					`   ✓ Inserted ${statements.length} rows into ${TARGET_TABLES[type]}`
 				);
@@ -395,16 +347,12 @@ ${statements.join('\n')}
 	if (!options.dryRun && totalMigrated > 0) {
 		console.log(`\n── Verification ──`);
 		for (const type of types) {
-			const src = await executeQuery<{ count: number }>(
-				config.database,
-				config.flags,
-				`SELECT COUNT(*) as count FROM event_ledger WHERE type = '${type}'`
-			);
-			const dest = await executeQuery<{ count: number }>(
-				config.database,
-				config.flags,
-				`SELECT COUNT(*) as count FROM ${TARGET_TABLES[type]}`
-			);
+			const src = await query<{ count: number }>(env, 'db', {
+				sql: `SELECT COUNT(*) as count FROM event_ledger WHERE type = '${type}'`,
+			});
+			const dest = await query<{ count: number }>(env, 'db', {
+				sql: `SELECT COUNT(*) as count FROM ${TARGET_TABLES[type]}`,
+			});
 			const srcCount = src[0]?.count ?? 0;
 			const destCount = dest[0]?.count ?? 0;
 			const match = srcCount === destCount ? '✓' : '⚠ MISMATCH';

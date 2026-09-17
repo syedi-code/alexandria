@@ -29,29 +29,23 @@
  */
 
 import 'dotenv/config';
-import { exec } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { promisify } from 'node:util';
+import {
+	executeSqlFile,
+	isEnvironment,
+	query,
+	type Environment,
+} from '../wrangler.js';
 
-const execAsync = promisify(exec);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..', '..');
-const workerDir = resolve(repoRoot, 'apps', 'worker');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
-
-const ENV_CONFIG = {
-	local: { database: 'antisocial-media', flags: '--local' },
-	staging: { database: 'antisocial-media-staging', flags: '--remote' },
-	production: { database: 'antisocial-media', flags: '--remote' },
-} as const;
-
-type Environment = keyof typeof ENV_CONFIG;
 
 interface Options {
 	env: Environment;
@@ -66,8 +60,8 @@ function parseArgs(): Options {
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
 			case '--env': {
-				const env = args[++i] as Environment;
-				if (!ENV_CONFIG[env]) {
+				const env = args[++i];
+				if (!isEnvironment(env)) {
 					console.error(`Invalid environment: ${env}`);
 					process.exit(1);
 				}
@@ -111,42 +105,6 @@ async function confirm(message: string): Promise<boolean> {
 			rl.close();
 			resolvePromise(answer.toLowerCase() === 'y');
 		});
-	});
-}
-
-interface D1QueryResult<T> {
-	success: boolean;
-	results: T[];
-}
-
-async function executeQuery<T>(
-	database: string,
-	flags: string,
-	query: string
-): Promise<T[]> {
-	const normalizedQuery = query.replace(/\s+/g, ' ').trim();
-	const escapedQuery = normalizedQuery.replace(/"/g, '\\"');
-	const command = `npx wrangler d1 execute ${database} ${flags} --json --command="${escapedQuery}"`;
-
-	const { stdout } = await execAsync(command, {
-		cwd: workerDir,
-		maxBuffer: 100 * 1024 * 1024,
-	});
-
-	const parsed: D1QueryResult<T>[] = JSON.parse(stdout);
-	return parsed[0]?.results || [];
-}
-
-async function executeSql(
-	database: string,
-	flags: string,
-	sqlFile: string
-): Promise<void> {
-	const command = `npx wrangler d1 execute ${database} ${flags} --file="${sqlFile}"`;
-
-	await execAsync(command, {
-		cwd: workerDir,
-		maxBuffer: 100 * 1024 * 1024,
 	});
 }
 
@@ -243,17 +201,14 @@ function generateSql(map: Map<string, string>): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-	const options = parseArgs();
-	const { database, flags } = ENV_CONFIG[options.env];
+	const { env, dryRun, yes } = parseArgs();
 
-	console.log(`\nEnvironment: ${options.env} (${database})`);
+	console.log(`\nEnvironment: ${env}`);
 
 	console.log('Fetching quote replaces-chains…');
-	const rows = await executeQuery<QuoteRow>(
-		database,
-		flags,
-		`SELECT id, replaces FROM quotes`
-	);
+	const rows = await query<QuoteRow>(env, 'db', {
+		sql: `SELECT id, replaces FROM quotes`,
+	});
 	console.log(`  ${rows.length} quotes total`);
 
 	const map = buildSupersededMap(rows);
@@ -265,15 +220,15 @@ async function main(): Promise<void> {
 
 	const sql = generateSql(map);
 
-	if (options.dryRun) {
+	if (dryRun) {
 		console.log('── DRY RUN — generated SQL ──\n');
 		console.log(sql);
 		return;
 	}
 
-	if (!options.yes) {
+	if (!yes) {
 		const ok = await confirm(
-			`Re-point references and DELETE ${map.size} superseded quote row(s) from ${options.env}?`
+			`Re-point references and DELETE ${map.size} superseded quote row(s) from ${env}?`
 		);
 		if (!ok) {
 			console.log('Aborted.');
@@ -289,7 +244,7 @@ async function main(): Promise<void> {
 	console.log(`SQL written to ${sqlFile}`);
 
 	console.log('Executing…');
-	await executeSql(database, flags, sqlFile);
+	await executeSqlFile(env, 'db', sqlFile);
 	console.log(`Done. Purged ${map.size} superseded quote version(s).`);
 }
 

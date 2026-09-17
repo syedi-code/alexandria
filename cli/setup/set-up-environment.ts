@@ -246,10 +246,7 @@ async function syncSecrets(env?: string): Promise<SetupResult['secrets']> {
 
 	try {
 		// Use the existing sync-secrets script with modifications for env
-		const secretsScript = path.resolve(
-			__dirname,
-			'./sync-secrets.ts'
-		);
+		const secretsScript = path.resolve(__dirname, './sync-secrets.ts');
 		const { stdout } = await execAsync(
 			`npx tsx "${secretsScript}" --quiet ${envFlag}`.trim(),
 			{ cwd: workerDir }

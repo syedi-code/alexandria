@@ -17,7 +17,7 @@ import {
 	pageIndexStatements,
 } from '@alexandria/core/works';
 import { parseRunOptions, runBudgeted } from './run.js';
-import { executeSqlFile, query } from './wrangler.js';
+import { executeSqlFile, query } from '../wrangler.js';
 
 const SEARCH_SCHEMA = path.resolve(import.meta.dirname, '../../sql/search');
 

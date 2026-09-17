@@ -20,13 +20,10 @@
  */
 
 import dotenv from 'dotenv';
-import { exec } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { promisify } from 'node:util';
+import { isEnvironment, query, type Environment } from '../wrangler.js';
 import { BOOK_COLUMNS, BOOK_FROM, BOOK_WHERE } from '@alexandria/core/works';
-
-const execAsync = promisify(exec);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -37,26 +34,8 @@ const scriptDir = new URL('.', import.meta.url).pathname.replace(
 	'$1'
 );
 const repoRoot = resolve(scriptDir, '..', '..');
-const workerDir = resolve(repoRoot, 'apps', 'worker');
 
 dotenv.config({ path: resolve(repoRoot, '.env') });
-
-const ENV_CONFIG = {
-	local: {
-		database: 'antisocial-media',
-		flags: '--local',
-	},
-	staging: {
-		database: 'antisocial-media-staging',
-		flags: '--remote',
-	},
-	production: {
-		database: 'antisocial-media',
-		flags: '--remote',
-	},
-} as const;
-
-type Environment = keyof typeof ENV_CONFIG;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -75,8 +54,8 @@ function parseArgs(): Options {
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
 			case '--env': {
-				const env = args[++i] as Environment;
-				if (!['local', 'staging', 'production'].includes(env)) {
+				const env = args[++i];
+				if (!isEnvironment(env)) {
 					console.error(`Invalid environment: ${env}`);
 					console.error('Valid options: local, staging, production');
 					process.exit(1);
@@ -116,29 +95,6 @@ Examples:
 	return options;
 }
 
-interface D1QueryResult<T> {
-	success: boolean;
-	results: T[];
-}
-
-async function executeQuery<T>(
-	database: string,
-	flags: string,
-	query: string
-): Promise<T[]> {
-	const normalizedQuery = query.replace(/\s+/g, ' ').trim();
-	const escapedQuery = normalizedQuery.replace(/"/g, '\\"');
-	const command = `npx wrangler d1 execute ${database} ${flags} --json --command="${escapedQuery}"`;
-
-	const { stdout } = await execAsync(command, {
-		cwd: workerDir,
-		maxBuffer: 50 * 1024 * 1024,
-	});
-
-	const parsed: D1QueryResult<T>[] = JSON.parse(stdout);
-	return parsed[0]?.results || [];
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
@@ -159,17 +115,14 @@ interface BookRow {
 
 async function main(): Promise<void> {
 	const { env, compact, json } = parseArgs();
-	const config = ENV_CONFIG[env];
 
-	console.log(`Extracting books from ${env} (${config.database})...`);
+	console.log(`Extracting books from ${env}...`);
 
-	const results = await executeQuery<BookRow>(
-		config.database,
-		config.flags,
-		`SELECT ${BOOK_COLUMNS} ${BOOK_FROM}
+	const results = await query<BookRow>(env, 'db', {
+		sql: `SELECT ${BOOK_COLUMNS} ${BOOK_FROM}
 		  WHERE ${BOOK_WHERE}
-		  ORDER BY w.created_at DESC`
-	);
+		  ORDER BY w.created_at DESC`,
+	});
 
 	const extracted = results.map((r) => {
 		if (compact) {
