@@ -31,6 +31,12 @@ export const MODELS: readonly ModelEntry[] = [
 		provider: 'anthropic',
 		acceptsFiles: true,
 	},
+	{
+		id: 'claude-haiku-4-5-20251001',
+		label: 'Claude Haiku 4.5',
+		provider: 'anthropic',
+		acceptsFiles: true,
+	},
 	{ id: 'gpt-5.5', label: 'GPT-5.5', provider: 'openai', acceptsFiles: true },
 	{
 		id: 'gemini-3.5-flash',
@@ -44,7 +50,7 @@ export const DEFAULT_MODEL_ID = 'claude-sonnet-5';
 
 /** Small, cheap models for naming conversations, one per provider. */
 const TITLE_MODEL_IDS: Record<Provider, string> = {
-	anthropic: 'claude-haiku-4-5',
+	anthropic: 'claude-haiku-4-5-20251001',
 	openai: 'gpt-5.4-nano',
 	google: 'gemini-3.5-flash-lite',
 };
