@@ -27,7 +27,23 @@ import type { ModelEntry } from './models.js';
 import { chatTools, PAGE_TOOLS } from './tools.js';
 
 /** Enough to search, read around a passage and look again, without running away. */
-export const MAX_STEPS = 12;
+export const MAX_STEPS = 14;
+
+/**
+ * The last step is for writing, not for reading.
+ *
+ * A model that spends every step searching used to hit the cap in the middle
+ * of a tool call, and the turn ended with no answer at all — the reader was
+ * shown a list of everything it had read and nothing underneath it. On the
+ * last step the tools are taken away, so whatever it has is what it answers
+ * from.
+ */
+const LAST_STEP = [
+	'This is your last step: there are no searches or reads left.',
+	'Answer now, from the pages you have already read, and cite them.',
+	'If they do not settle the question, say what you found and what is',
+	'still open. Do not say that you ran out of steps.',
+].join(' ');
 
 export type ScribeMessage = UIMessage<
 	{ model_id: string },
@@ -140,6 +156,16 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 				messages: modelMessages,
 				tools,
 				stopWhen: isStepCount(MAX_STEPS),
+				prepareStep: ({ stepNumber }) =>
+					stepNumber < MAX_STEPS - 1
+						? {}
+						: {
+								toolChoice: 'none',
+								instructions: [
+									SCRIBE_INSTRUCTIONS,
+									LAST_STEP,
+								].join('\n\n'),
+							},
 			});
 
 			for await (const chunk of result.toUIMessageStream<ScribeMessage>({
@@ -185,7 +211,10 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 				},
 				citations,
 			});
-			if (!failed && !conversation.title && history.length === 0) {
+			// Any turn that worked, not only the first. A conversation whose
+			// first turn failed used to keep a null title for ever, and the
+			// client sat on `naming…` for the rest of its life.
+			if (!failed && !conversation.title) {
 				turn.waitUntil(nameConversation(turn).catch(console.error));
 			}
 		},

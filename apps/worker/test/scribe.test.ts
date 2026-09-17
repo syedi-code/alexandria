@@ -17,7 +17,11 @@ import {
 	ids,
 } from '../../../packages/core/test/fixture.js';
 import type { TestDatabase } from '../../../packages/core/test/d1.js';
-import { streamTurn, type ScribeMessage } from '../api/conversations/chat.js';
+import {
+	MAX_STEPS,
+	streamTurn,
+	type ScribeMessage,
+} from '../api/conversations/chat.js';
 import type { ModelEntry } from '../api/conversations/models.js';
 import { createAlexandriaMcp } from '../api/mcp/server.js';
 import mcpRoutes from '../api/mcp/index.js';
@@ -193,6 +197,39 @@ describe('a chat turn', () => {
 			(await getConversation(db.d1, ids.userAdmin, conversation.id))
 				?.title
 		).toBe('Nietzsche on monsters');
+	});
+
+	// A model that spent every step searching used to hit the cap in the
+	// middle of a tool call, and the reader was shown everything it had read
+	// with nothing underneath it. The last step has the tools taken away.
+	it('answers on its last step rather than running out mid-search', async () => {
+		const searches = Array.from({ length: MAX_STEPS - 1 }, () =>
+			toolCall('read_pages', { document_id: documentId, from: 1, to: 2 })
+		);
+		const model = scripted(
+			...searches,
+			answer('Nietzsche warns [P2 "He who fights with monsters"].')
+		);
+
+		await runTurn(conversation, 'What about monsters?', model);
+
+		expect(model.doStreamCalls).toHaveLength(MAX_STEPS);
+		for (const call of model.doStreamCalls.slice(0, -1)) {
+			expect(call.toolChoice?.type).not.toBe('none');
+		}
+
+		const last = model.doStreamCalls[MAX_STEPS - 1];
+		expect(last.toolChoice?.type).toBe('none');
+		expect(JSON.stringify(last.prompt)).toContain('This is your last step');
+
+		const [, answered] = await listMessages(
+			db.d1,
+			ids.userAdmin,
+			conversation.id
+		);
+		expect(
+			answered.parts.some((p) => (p as { type: string }).type === 'text')
+		).toBe(true);
 	});
 
 	it('keeps page handles valid across turns', async () => {
