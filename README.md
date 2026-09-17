@@ -48,16 +48,15 @@ npm test
 
 ## Reading further
 
-|                             |                                                                     |
-| --------------------------- | ------------------------------------------------------------------- |
-| `CLAUDE.md`                 | The working guide: layout, commands, and what will bite you         |
-| `SECURITY.md`               | The three auth surfaces worth auditing, and the known limits        |
-| `CONTEXT.md`                | The glossary. Authoritative on what words mean here                 |
-| `CONTRIBUTING.md`           | Setup, workflow, and the rules for schema and API changes           |
-| `docs/COMMANDS.md`          | Every npm script                                                    |
-| `docs/DEPLOYMENT.md`        | Environments, secrets, auth, and why the names still say antisocial |
-| `docs/WORKS-MIGRATION.md`   | The runbook for `0026_works.sql`                                    |
-| `docs/OPEN-SOURCE-AUDIT.md` | What was found before this was made public, and what was done       |
+|                           |                                                                     |
+| ------------------------- | ------------------------------------------------------------------- |
+| `CLAUDE.md`               | The working guide: layout, commands, and what will bite you         |
+| `SECURITY.md`             | The three auth surfaces worth auditing, and the known limits        |
+| `CONTEXT.md`              | The glossary. Authoritative on what words mean here                 |
+| `CONTRIBUTING.md`         | Setup, workflow, and the rules for schema and API changes           |
+| `docs/COMMANDS.md`        | Every npm script                                                    |
+| `docs/DEPLOYMENT.md`      | Environments, secrets, auth, and why the names still say antisocial |
+| `docs/WORKS-MIGRATION.md` | The runbook for `0026_works.sql`                                    |
 
 ## The catalogue page
 
