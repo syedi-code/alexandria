@@ -2,13 +2,13 @@
 
 _2026-09-16, against `main` at `6ede234`._
 
-**Verdict: the working tree is ready. The history is not.**
+**Verdict: ready.** The code findings below are fixed and deployed, and the
+history is gone.
 
-No credential appears anywhere in the repository or its 506 commits — that scan
-came back empty. The code findings below are fixed and deployed. But two things
-in git history must be removed before this goes public: a 2,254-row dump of the
-personal journal, and 26 licensed commercial font files. Neither is reachable
-from `origin/main`, which is exactly why they survived this long. See **Git
+No credential appeared anywhere in the repository or its 506 commits. Two things
+in that history could not be published — a 2,254-row dump of the personal
+journal, and 26 licensed commercial font files — so on 2026-09-17 the repository
+was deleted and recreated from a single commit with the same files. See **Git
 history** below.
 
 The blocker was never the repository itself. It was a live production
@@ -20,8 +20,8 @@ Severity is about what happens if this is published, not about polish.
 
 | #   | Finding                                                 | Severity | State                |
 | --- | ------------------------------------------------------- | -------- | -------------------- |
-| H1  | Journal dump (2,254 rows) in git history                | Critical | **Needs a rewrite**  |
-| H2  | 26 licensed commercial fonts in git history             | High     | **Needs a rewrite**  |
+| H1  | Journal dump (2,254 rows) in git history                | Critical | Purged               |
+| H2  | 26 licensed commercial fonts in git history             | High     | Purged               |
 | 1   | `/api/files/*` accepted any value as a signed token     | Critical | Fixed, deployed      |
 | 2   | `LOCAL_DEV` could grant admin on a deployed worker      | High     | Guarded at deploy    |
 | 3   | A real production user id hardcoded in source           | Medium   | Fixed                |
@@ -354,36 +354,35 @@ Neither is a credential. Both come out for free if you are rewriting anyway.
 - The remaining large blobs are texture PNGs and repeated `package-lock.json`
   revisions — noise that makes the repo 41 MB, not a disclosure.
 
-### Doing it
+### What was done
 
-`git filter-repo` (not `filter-branch`), from a fresh mirror clone, with the
-current work merged first so nothing in flight is lost:
+A history rewrite was not enough on its own. GitHub keeps a read-only
+`refs/pull/*` ref for every pull request, and nobody can push to or delete
+those; the 305 of them would have kept every old commit, `data.sql` included,
+reachable from the web until GitHub Support purged them.
 
-```bash
-git clone --mirror https://github.com/syedi-code/alexandria.git alexandria.git
-cd alexandria.git
-git filter-repo \
-  --path migrations/data.sql --invert-paths \
-  --path apps/web --invert-paths
-```
+Since the repository was private with no forks, it was cheaper to start over:
 
-Then rewrite the two strings across all remaining blobs with `--replace-text`,
-and force-push every ref.
+1. A mirror of the old repository was bundled as a backup.
+2. One parentless commit was built from the tree of `main` at the time, so the
+   files were byte-identical and no history came with them.
+3. The repository was deleted and recreated, private, under the same name.
+4. That commit was pushed as both `main` and `staging`, which keeps the two
+   related, so a feature branch still merges into either.
+5. `CLOUDFLARE_ACCOUNT_ID` was set again. `CLOUDFLARE_API_TOKEN` has to be
+   minted anew: GitHub never reveals a stored secret, and the old token was
+   already revoked.
 
-Three things to decide first, because a rewrite is not free:
+Checked afterwards against the GitHub API: the only refs are `main` and
+`staging` at the new commit, there are no pull requests, the old tip commit and
+the `data.sql` blob both return Not Found, and the tree holds no font or
+`apps/web` path. The backups were deleted once that held.
 
-1. **Every commit hash changes.** Open PRs, and any clone anyone holds, break.
-   You are the only user, so this is cheap now and expensive later — it is much
-   better done before the repo is public than after.
-2. **The 90-odd stale branches.** Most are long-merged. Deleting them before the
-   rewrite is less work than rewriting them, and makes the result legible.
-3. **A rewrite does not un-publish.** It is only sufficient _because_ the repo
-   is still private. Once these blobs have been public for even an hour, assume
-   they are copied, and treat B as a licence matter to resolve with the foundry
-   rather than a git problem.
+What this cost: pull request and Actions history, and the two secrets. What it
+did not touch: the deployed workers, which were already running these files.
 
-The safe order is: merge this branch, delete the stale branches, rewrite, make
-public. Not the other way round.
+The leftover `apps/web/` build that carried the fonts has been deleted locally
+as well, and `.gitignore` excludes that path so it cannot come back.
 
 ## What was checked and found clean
 
@@ -422,10 +421,6 @@ Carried into `SECURITY.md` so a reader finds them without reading this file:
 
 ## Left alone deliberately
 
-- **`apps/web/`** in the working tree: 14 MB of stale build output, including
-  licensed Tiempos and Söhne fonts and two `.env` files. Untracked, ignored, and
-  it must stay that way — publishing those fonts would be a licence violation.
-  It is debris from another repo; delete it when convenient.
 - **`.github/agents/` and `.github/prompts/`**: 26 spec-kit scaffolding files.
   Noise for a reader, but they are your tooling and removing them is your call.
 - **`plans/`**: three internal planning documents. Harmless, and honest about
