@@ -22,6 +22,7 @@ import {
 	streamTurn,
 	type ScribeMessage,
 } from '../api/conversations/chat.js';
+import { asTitle } from '../api/conversations/instructions.js';
 import type { ModelEntry } from '../api/conversations/models.js';
 import { createAlexandriaMcp } from '../api/mcp/server.js';
 import mcpRoutes from '../api/mcp/index.js';
@@ -433,5 +434,32 @@ describe('the /mcp route', () => {
 			MCP_SERVICE_TOKEN_ID: 'client-id',
 		});
 		expect(response.status).toBe(401);
+	});
+});
+
+describe('naming a conversation', () => {
+	/** Verbatim from production: the model answered instead of naming. */
+	const RUNAWAY =
+		'# The Randomness of Two Books\n\n*Imagine I pulled:*\n1. **"A Brief History of Time"** by Stephen Hawking';
+
+	it('saves one line of words, whatever came back', () => {
+		expect(asTitle(RUNAWAY)).toBe('The Randomness of Two Books');
+	});
+
+	it('leaves a name that was already a name', () => {
+		expect(asTitle('Machiavelli on Cruelty and Appearance')).toBe(
+			'Machiavelli on Cruelty and Appearance'
+		);
+	});
+
+	it('never saves a mark, a quote or a trailing stop', () => {
+		expect(asTitle('**Nietzsche** on truth.')).toBe('Nietzsche on truth');
+		expect(asTitle('"The Nature of the Library"')).toBe(
+			'The Nature of the Library'
+		);
+	});
+
+	it('is short enough to sit in a rail', () => {
+		expect(asTitle('word '.repeat(60)).length).toBeLessThanOrEqual(72);
 	});
 });
