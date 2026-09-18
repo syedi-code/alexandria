@@ -229,6 +229,38 @@ describe('page handles', () => {
 });
 
 describe('answer citations', () => {
+	/**
+	 * The words the model quotes are the citation, so an answer carries one copy
+	 * of them and that copy is what is checked. Before <cite> it wrote the
+	 * passage in its prose and cited it again, and the reader was shown one copy
+	 * while the server checked the other.
+	 */
+	it('are the words a cite wraps', () => {
+		expect(
+			parseCitations(
+				'Europe is <cite P1>a civilization that uses its principles for trickery</cite>, and <cite ref="P12">no one colonizes innocently</cite>.'
+			)
+		).toEqual([
+			{
+				handle: 'P1',
+				quote: 'a civilization that uses its principles for trickery',
+			},
+			{ handle: 'P12', quote: 'no one colonizes innocently' },
+		]);
+	});
+
+	// A quote is matched against its page character for character, so a name
+	// the model marked inside one would fail a faithful citation.
+	it('drop a name marked inside the quoted words', () => {
+		expect(
+			parseCitations(
+				'<cite P4>what he cannot forgive <author>Hitler</author> for</cite>'
+			)
+		).toEqual([
+			{ handle: 'P4', quote: 'what he cannot forgive Hitler for' },
+		]);
+	});
+
 	it('are parsed however the model punctuates them', () => {
 		expect(
 			parseCitations(
