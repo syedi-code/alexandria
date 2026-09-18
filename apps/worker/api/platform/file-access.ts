@@ -13,10 +13,26 @@ interface FileRequest {
  */
 const PREFIXES = ['/api/files/', '/files/'] as const;
 
-/** The bucket key a file request is asking for, or null if it is not one. */
+/**
+ * The bucket key a file request is asking for, or null if it is not one.
+ *
+ * The key travels inside a URL, so a space or a comma in a filename arrives
+ * percent-encoded — and six of the keys in production have one. Both the
+ * signature and the bucket are keyed by the key itself: `/files/sign` mints a
+ * token over the decoded key and R2 stores the decoded key, so a request for
+ * `Kant%2C%20Immanuel.pdf` failed its signature check and never reached the
+ * object it was entitled to.
+ */
 export function objectKeyFromPath(path: string): string | null {
 	const prefix = PREFIXES.find((p) => path.startsWith(p));
-	return prefix ? path.slice(prefix.length) : null;
+	if (!prefix) return null;
+	const raw = path.slice(prefix.length);
+	try {
+		return decodeURIComponent(raw);
+	} catch {
+		// A stray `%` is not an encoding — it is part of the key.
+		return raw;
+	}
 }
 
 /**

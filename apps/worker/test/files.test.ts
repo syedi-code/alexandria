@@ -8,20 +8,39 @@ import { signFileToken } from '@alexandria/core/platform';
 
 const SECRET = 'file-signing-secret-for-tests';
 const KEY = 'books/8f1c/leviathan.pdf';
+/** Six of production's keys carry a space or a comma; this is one of them. */
+const SPACED = 'books/8f1c/Kant, Immanuel - What is Enlightenment.pdf';
 const BYTES = 'a pdf, as far as anyone here is concerned';
+
+/** A key travels through a URL a path segment at a time. */
+const inUrl = (key: string) => key.split('/').map(encodeURIComponent).join('/');
 
 let db: TestDatabase;
 let reads: string[];
 
-/** Records what was asked for, so a leak shows up as a read that happened. */
+/**
+ * Records what was asked for, so a leak shows up as a read that happened, and
+ * answers a byte range the way R2 does, so the route's arithmetic is tested
+ * rather than assumed.
+ */
 const bucket = () => {
 	reads = [];
 	return {
-		get(key: string) {
+		get(key: string, options?: { range?: R2Range }) {
 			reads.push(key);
-			if (key !== KEY) return null;
+			if (key !== KEY && key !== SPACED) return null;
+			const range = options?.range;
+			let body = BYTES;
+			if (range && 'suffix' in range) {
+				body = BYTES.slice(BYTES.length - range.suffix);
+			} else if (range) {
+				const offset = range.offset ?? 0;
+				body = BYTES.slice(offset, offset + (range.length ?? Infinity));
+			}
 			return {
-				body: BYTES,
+				body,
+				size: BYTES.length,
+				range,
 				httpMetadata: { contentType: 'application/pdf' },
 			};
 		},
@@ -197,5 +216,111 @@ describe('POST /files/sign', () => {
 			body: JSON.stringify({ path: '../../etc/passwd' }),
 		});
 		expect(response.status).toBe(400);
+	});
+});
+
+/**
+ * A reader who wants page 147 of a four-hundred-page scan should not be sent
+ * the other three hundred and ninety-nine. Without `Accept-Ranges` a PDF
+ * reader cannot ask for less and pulls the whole file — in a measured run of
+ * pdf.js against this route as it was, the whole file three times over.
+ */
+describe('a byte range', () => {
+	const signed = async (key = KEY) =>
+		`/api/files/${inUrl(key)}?token=${encodeURIComponent(
+			await signFileToken({ key, secret: SECRET })
+		)}`;
+
+	it('is advertised, with the size, when none was asked for', async () => {
+		const response = await call(await signed());
+		expect(response.status).toBe(200);
+		expect(response.headers.get('Accept-Ranges')).toBe('bytes');
+		expect(response.headers.get('Content-Length')).toBe(
+			String(BYTES.length)
+		);
+	});
+
+	it('serves exactly the bytes asked for, and says where they sit', async () => {
+		const response = await call(await signed(), {
+			headers: { range: 'bytes=2-6' },
+		});
+		expect(response.status).toBe(206);
+		expect(await response.text()).toBe(BYTES.slice(2, 7));
+		expect(response.headers.get('Content-Range')).toBe(
+			`bytes 2-6/${BYTES.length}`
+		);
+		expect(response.headers.get('Content-Length')).toBe('5');
+	});
+
+	it('serves an open-ended range to the end of the object', async () => {
+		const response = await call(await signed(), {
+			headers: { range: 'bytes=30-' },
+		});
+		expect(response.status).toBe(206);
+		expect(await response.text()).toBe(BYTES.slice(30));
+		expect(response.headers.get('Content-Range')).toBe(
+			`bytes 30-${BYTES.length - 1}/${BYTES.length}`
+		);
+	});
+
+	// The first thing a PDF reader asks for is the end of the file, where the
+	// table of contents is.
+	it('serves a suffix range, which is where a PDF keeps its index', async () => {
+		const response = await call(await signed(), {
+			headers: { range: 'bytes=-8' },
+		});
+		expect(response.status).toBe(206);
+		expect(await response.text()).toBe(BYTES.slice(-8));
+		expect(response.headers.get('Content-Range')).toBe(
+			`bytes ${BYTES.length - 8}-${BYTES.length - 1}/${BYTES.length}`
+		);
+	});
+
+	it('stops at the end of the object when asked for more than there is', async () => {
+		const response = await call(await signed(), {
+			headers: { range: 'bytes=30-9999' },
+		});
+		expect(response.status).toBe(206);
+		expect(await response.text()).toBe(BYTES.slice(30));
+		expect(response.headers.get('Content-Range')).toBe(
+			`bytes 30-${BYTES.length - 1}/${BYTES.length}`
+		);
+		expect(response.headers.get('Content-Length')).toBe(
+			String(BYTES.length - 30)
+		);
+	});
+
+	it('gives the whole object when the range makes no sense', async () => {
+		const response = await call(await signed(), {
+			headers: { range: 'pages=1-2' },
+		});
+		expect(response.status).toBe(200);
+		expect(await response.text()).toBe(BYTES);
+	});
+});
+
+/**
+ * A filename with a space arrives percent-encoded. The token was minted over
+ * the key itself and R2 holds the key itself, so a route comparing the encoded
+ * path failed the signature check and served nothing — for every work whose
+ * file has a space or a comma in its name.
+ */
+describe('a key that has to be encoded to travel', () => {
+	it('is signed, requested and served as the same key', async () => {
+		const token = await signFileToken({ key: SPACED, secret: SECRET });
+		const response = await call(
+			`/api/files/${inUrl(SPACED)}?token=${encodeURIComponent(token)}`
+		);
+		expect(response.status).toBe(200);
+		expect(reads).toEqual([SPACED]);
+	});
+
+	it('still refuses a token minted for a different object', async () => {
+		const token = await signFileToken({ key: KEY, secret: SECRET });
+		const response = await call(
+			`/api/files/${inUrl(SPACED)}?token=${encodeURIComponent(token)}`
+		);
+		expect(response.status).toBe(401);
+		expect(reads).toEqual([]);
 	});
 });
