@@ -4,14 +4,22 @@ import type { PageRef } from '../works/pages.js';
 import type { PageHandles } from './handles.js';
 
 /**
- * `[P7 "quoted words"]`, or `"quoted words" [P7]` — smaller models put the
- * quote in the prose and the bare handle after it, and an answer whose quotes
- * go unchecked looks exactly like one whose quotes were checked. A bracketed
- * quote runs to the closing `"]`, so it may quote a quotation. Curly quotes,
- * and a colon or comma after the handle, are accepted for the same reason.
+ * `<cite P7>quoted words</cite>`: the words the model quotes are the citation,
+ * so the answer carries one copy of them and that copy is what is checked.
+ *
+ * `[P7 "quoted words"]` and `"quoted words" [P7]` are still read. Every answer
+ * saved before `<cite>` is written in them, and a model that slips back into
+ * one should still have its quote checked rather than silently not.
+ *
+ * This mirrors `parseCitations()` in scribe's `citations/parse.ts`, and the
+ * two have to agree forever — including on curly quotes, `[P7: "…"]`, and
+ * quotes that contain quotes.
  */
 const CITATION =
-	/\[(P\d+)\s*[:,]?\s*["“](.+?)["”]\s*\]|["“]([^"”]+)["”]\s*\[(P\d+)\]/g;
+	/<cite\s+(?:ref=)?["']?(P\d+)["']?\s*>([\s\S]+?)<\/cite>|\[(P\d+)\s*[:,]?\s*["“](.+?)["”]\s*\]|["“]([^"”]+)["”]\s*\[(P\d+)\]/g;
+
+/** A name the model marked inside a quote would break it, character for character. */
+const MARKED = /<\/?(?:title|author)>/g;
 
 export interface CitationMarker {
 	handle: string;
@@ -25,9 +33,19 @@ export type AnswerCitation = CitationMarker & { ref: PageRef | null } & (
 
 export function parseCitations(text: string): CitationMarker[] {
 	return [...text.matchAll(CITATION)].map(
-		([, handle, quote, quoteBefore, handleAfter]) => ({
-			handle: handle ?? handleAfter,
-			quote: (quote ?? quoteBefore).trim(),
+		([
+			,
+			citeHandle,
+			citeQuote,
+			handle,
+			quote,
+			quoteBefore,
+			handleAfter,
+		]) => ({
+			handle: citeHandle ?? handle ?? handleAfter,
+			quote: (citeQuote ?? quote ?? quoteBefore)
+				.replace(MARKED, '')
+				.trim(),
 		})
 	);
 }
