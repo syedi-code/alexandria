@@ -46,12 +46,42 @@ each need work before a second person used it:
 - **Any signed-in user can sign any object key.** `POST /api/files/sign`
   requires a session but does not check that the key belongs to the caller. R2
   keys carry no ownership, so enforcing it needs an ownership model that does
-  not exist yet.
-- **No rate limiting.** The worker relies on Cloudflare Access to keep
-  unauthenticated traffic off it entirely.
+  not exist yet. This is the one that matters most if the Access policy is ever
+  widened: `GET /api/catalogue` publishes the library's ids without a session,
+  and `GET /api/books/:id` turns one into an object key, so a signed-in reader
+  can fetch any document in the bucket in full.
+- **No rate limiting, and no spend cap.** The worker relies on Cloudflare Access
+  to keep unauthenticated traffic off it entirely. Nothing bounds an
+  authenticated one: `POST /api/conversations/:id/chat` runs an agent loop of up
+  to `MAX_STEPS` steps on the deployment's own provider keys, and a turn costs
+  tens of thousands of input tokens because page text is re-sent at every step.
+  `npm run spend:prod` reports what has been spent, per reader; it does not
+  limit it.
+- **`/api/*` is reachable without Access.** Both frontends bypass their Access
+  application for `/api/*` so their Pages Function can proxy it, which means the
+  session endpoint and everything behind it face the open internet directly.
+  Access is the front door for people, not for the API.
 - **Deletes are soft.** `works.deleted_at` hides a row from listings; it still
   resolves by id, because essays cite it. Deleting a work does not remove its
   file from R2.
+- **Sessions are not cleaned up reliably.** `cleanupExpiredSessions` is
+  fire-and-forget on sign-in, and expired rows outnumber live ones by a wide
+  margin in production.
+
+## What tenant isolation covers
+
+Every private entity — notes, quotes, essays, thoughts, threads, links, media,
+sleep, conversations and messages — is scoped by `user_id` in SQL, not by a
+check in the route. Works and creators are deliberately shared: the catalogue is
+the same library whoever is reading it, and only an admin may change it.
+
+The seam between those two is `packages/core/writing/enrichment.ts`, which joins
+the shared catalogue to private writing. It shipped unscoped, so
+`GET /api/books/:id/detail` returned one reader's quotes, notes and essays to
+any other — over ids that `GET /api/catalogue` gives out with no session at all.
+The second-reader tests in
+`packages/core/test/catalogue.characterisation.test.ts` are what keep that
+fixed; treat them as production code.
 
 ## Handling a leaked file-signing secret
 
