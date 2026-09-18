@@ -79,8 +79,9 @@ The seam between those two is `packages/core/writing/enrichment.ts`, which joins
 the shared catalogue to private writing. It shipped unscoped, so
 `GET /api/books/:id/detail` returned one reader's quotes, notes and essays to
 any other — over ids that `GET /api/catalogue` gives out with no session at all.
-The second-reader tests in `packages/core/test/catalogue.characterisation.test.ts`
-are what keep that fixed; treat them as production code.
+The second-reader tests in
+`packages/core/test/catalogue.characterisation.test.ts` are what keep that
+fixed; treat them as production code.
 
 ## Handling a leaked file-signing secret
 
