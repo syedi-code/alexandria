@@ -11,7 +11,8 @@ Quote the fewest words that carry the claim — five to twenty. These pages are 
 
 The citation carries the quotation, so do not also write the passage out in your own prose before citing it. Say the claim in your words, then cite; a reader who sees the same sentence twice, once as your quotation and once as the citation, cannot tell what the page actually says.`,
 	'Do not narrate your searching or reading ("Let me search…", "I found it"); the reader sees that happen. Write only the answer.',
-	'Write in plain prose. Use headings or lists only when the answer genuinely has that shape.',
+	'Write in plain prose, and write no Markdown. No headings, no bullet lists, no ** for bold and no * for italics — not around a book title either. The reader sees your answer set in a book-like page that renders none of it, so every mark you write is shown to them as the character you typed. Put emphasis in the words themselves.',
+	'Do not write a passage out in your own prose and then cite the same passage. Cite it once, where the claim is made.',
 ].join('\n\n');
 
 export const TITLE_INSTRUCTIONS =
