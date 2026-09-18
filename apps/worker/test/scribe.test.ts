@@ -470,26 +470,41 @@ describe('naming a conversation', () => {
 /**
  * The reader could not follow a cited answer: quotations written twice, the
  * second time in different words, with every citation piled at the end of the
- * sentence. Conversations ce0188b1 and d4cae4ab on production.
+ * sentence. Conversations ce0188b1 and d4cae4ab on production, and d2763b7f
+ * after three attempts to forbid it in prose. The quoted words are now the
+ * citation, so there is one copy of them and no rule to keep.
  */
 describe('how an answer is asked to cite', () => {
-	it('shows the model the shape of a woven citation', () => {
+	it('shows the model the shape of a woven cite', () => {
 		expect(SCRIBE_INSTRUCTIONS).toContain(
-			'still reads with the quoted words spoken in place'
+			'woven so the sentence still reads with them spoken in place'
 		);
-		expect(SCRIBE_INSTRUCTIONS).toContain('GOOD');
-		expect(SCRIBE_INSTRUCTIONS).toContain('BAD');
+		expect(SCRIBE_INSTRUCTIONS).toContain(
+			'<cite P4>before they were its victims, they were its accomplices</cite>'
+		);
+	});
+
+	// One worked example rather than a rule per case: the answer it shows is
+	// the shape of the thing, seven citations woven through a paragraph.
+	it('works the example through seven pages', () => {
+		const handles = [...SCRIBE_INSTRUCTIONS.matchAll(/<cite (P\d+)>/g)].map(
+			(match) => match[1]
+		);
+		expect(handles).toEqual(['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7']);
 	});
 
 	it('forbids collecting citations at the end', () => {
-		expect(SCRIBE_INSTRUCTIONS).toContain(
-			'Never collect citations at the end of a sentence or a paragraph'
-		);
+		expect(SCRIBE_INSTRUCTIONS).toContain('never collected at the end');
 	});
 
-	it('forbids quoting in prose and then citing the same words', () => {
+	// A quotation outside a cite is shown to the reader with quotation marks
+	// and no verdict, which is the appearance of evidence without the check.
+	it('forbids a quotation that is not a cite', () => {
 		expect(SCRIBE_INSTRUCTIONS).toContain(
-			'Never write a quotation in your prose and then cite the same words'
+			'never quote outside a cite: that reaches the reader unchecked'
+		);
+		expect(SCRIBE_INSTRUCTIONS).toContain(
+			'Never put quotation marks around quoted words'
 		);
 	});
 
