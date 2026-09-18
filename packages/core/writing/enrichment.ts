@@ -36,31 +36,40 @@ const EMPTY_ENRICHMENT: WorkEnrichment = {
  * Counts for every referenced work in one pass. Grouping over the whole table
  * rather than binding a list of ids keeps this to a single statement whatever
  * the page size — D1 caps bound parameters well below a full catalogue page.
+ *
+ * Scoped to one reader. A count of how much has been written about a work is
+ * writing, not catalogue: two readers of the same shelf owe each other no
+ * account of what they made of it.
  */
 export async function getWorkEnrichment(
-	db: D1Database
+	db: D1Database,
+	userId: string
 ): Promise<Map<string, WorkEnrichment>> {
 	const result = await db
 		.prepare(
 			`SELECT 'quote' AS kind, book_id AS work_id, COUNT(*) AS cnt, MAX(created_at) AS last
 			   FROM quotes
 			  WHERE book_id IS NOT NULL
+			    AND user_id = ?
 			    AND id NOT IN (SELECT replaces FROM quotes WHERE replaces IS NOT NULL)
 			  GROUP BY book_id
 			 UNION ALL
 			 SELECT 'note', book_id, COUNT(*), MAX(created_at)
 			   FROM notes
 			  WHERE book_id IS NOT NULL
+			    AND user_id = ?
 			    AND id NOT IN (SELECT replaces FROM notes WHERE replaces IS NOT NULL)
 			  GROUP BY book_id
 			 UNION ALL
 			 SELECT 'citation', er.entity_id, COUNT(*), NULL
 			   FROM essay_references er
 			   JOIN essays e ON e.id = er.essay_id
+			    AND e.user_id = ?
 			    AND e.id NOT IN (SELECT replaces FROM essays WHERE replaces IS NOT NULL)
 			  WHERE er.entity_type = 'book'
 			  GROUP BY er.entity_id`
 		)
+		.bind(userId, userId, userId)
 		.all<{
 			kind: 'quote' | 'note' | 'citation';
 			work_id: string;
@@ -101,14 +110,15 @@ export type LibraryListOptions = CatalogueListOptions;
 
 export async function getLibraryBooks(
 	db: D1Database,
-	options: LibraryListOptions = {}
+	options: LibraryListOptions,
+	userId: string
 ): Promise<{
 	books: LibraryBookRow[];
 	totals: { books: number; quotes: number; notes: number };
 }> {
 	const [catalogue, enrichment] = await Promise.all([
 		listCatalogue(db, options),
-		getWorkEnrichment(db),
+		getWorkEnrichment(db, userId),
 	]);
 
 	const books = catalogue.rows.map((row) => {
@@ -184,9 +194,20 @@ export interface BookDetail {
 	stats: { quotes: number; notes: number; essays: number; media: number };
 }
 
+/**
+ * One work, and what one reader has written about it.
+ *
+ * The book, its author and its media are catalogue: the same for everyone. The
+ * quotes, notes, essays and co-citations are not, and every one of them is
+ * scoped to `userId`. Reachable at `GET /books/:id/detail` with nothing but a
+ * session, over ids that `GET /catalogue` hands out unauthenticated — so an
+ * unscoped query here is the whole of one person's marginalia, readable by
+ * anyone the Access policy lets in.
+ */
 export async function getBookDetail(
 	db: D1Database,
-	bookId: string
+	bookId: string,
+	userId: string
 ): Promise<BookDetail | null> {
 	const entry = await getCatalogueEntry(db, bookId);
 	if (!entry) return null;
@@ -194,20 +215,20 @@ export async function getBookDetail(
 	const quotesRes = await db
 		.prepare(
 			`SELECT id, quote, page, created_at FROM quotes
-			   WHERE book_id = ?
+			   WHERE book_id = ? AND user_id = ?
 			     AND id NOT IN (SELECT replaces FROM quotes WHERE replaces IS NOT NULL)
 			   ORDER BY created_at DESC LIMIT 50`
 		)
-		.bind(bookId)
+		.bind(bookId, userId)
 		.all<BookDetailQuote>();
 	const notesRes = await db
 		.prepare(
 			`SELECT id, content, page, created_at FROM notes
-			   WHERE book_id = ?
+			   WHERE book_id = ? AND user_id = ?
 			     AND id NOT IN (SELECT replaces FROM notes WHERE replaces IS NOT NULL)
 			   ORDER BY created_at DESC LIMIT 50`
 		)
-		.bind(bookId)
+		.bind(bookId, userId)
 		.all<BookDetailNote>();
 
 	const essaysRes = await db
@@ -218,12 +239,13 @@ export async function getBookDetail(
 			        er.page AS page
 			   FROM essay_references er
 			   JOIN essays e ON e.id = er.essay_id
+			    AND e.user_id = ?
 			    AND e.id NOT IN (SELECT replaces FROM essays WHERE replaces IS NOT NULL)
 			   WHERE er.entity_type = 'book' AND er.entity_id = ?
 			   ORDER BY er.position ASC, e.created_at DESC
 			   LIMIT 50`
 		)
-		.bind(bookId)
+		.bind(userId, bookId)
 		.all<BookDetailEssay>();
 
 	const relatedRes = await db
@@ -231,6 +253,7 @@ export async function getBookDetail(
 			`SELECT w.id AS id, w.title AS title, w.creator AS author, COUNT(*) AS co_citations
 			   FROM essay_references er1
 			   JOIN essays e1 ON e1.id = er1.essay_id
+			    AND e1.user_id = ?
 			    AND e1.id NOT IN (SELECT replaces FROM essays WHERE replaces IS NOT NULL)
 			   JOIN essay_references er2 ON er2.essay_id = er1.essay_id
 			   JOIN works w ON w.id = er2.entity_id AND w.deleted_at IS NULL
@@ -240,17 +263,18 @@ export async function getBookDetail(
 			   ORDER BY co_citations DESC, w.title ASC
 			   LIMIT 5`
 		)
-		.bind(bookId, bookId)
+		.bind(userId, bookId, bookId)
 		.all<BookDetailRelated>();
 
 	const totalEssays = await db
 		.prepare(
 			`SELECT COUNT(*) AS c FROM essay_references er
 			   JOIN essays e ON e.id = er.essay_id
+			    AND e.user_id = ?
 			    AND e.id NOT IN (SELECT replaces FROM essays WHERE replaces IS NOT NULL)
 			   WHERE er.entity_type = 'book' AND er.entity_id = ?`
 		)
-		.bind(bookId)
+		.bind(userId, bookId)
 		.first<{ c: number }>();
 
 	return {

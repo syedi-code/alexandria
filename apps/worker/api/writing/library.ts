@@ -49,12 +49,11 @@ app.get('/books/library', requireAuth(), async (c) => {
 		sortRaw === 'recent' || sortRaw === 'year' ? sortRaw : 'author_az';
 
 	try {
-		const result = await getLibraryBooks(db, {
-			search,
-			decade,
-			hasPdf,
-			sort,
-		});
+		const result = await getLibraryBooks(
+			db,
+			{ search, decade, hasPdf, sort },
+			c.get('authContext')!.user.id
+		);
 		return c.json(result);
 	} catch (error) {
 		console.error('GET /books/library error:', error);
@@ -71,7 +70,11 @@ app.get('/books/:id/detail', requireAuth(), async (c) => {
 
 	const id = c.req.param('id');
 	try {
-		const detail = await getBookDetail(db, id);
+		const detail = await getBookDetail(
+			db,
+			id,
+			c.get('authContext')!.user.id
+		);
 		if (!detail) {
 			return c.json({ error: 'Book not found' }, 404);
 		}
