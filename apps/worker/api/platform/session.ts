@@ -5,7 +5,6 @@ import {
 	createSession,
 	getSessionByToken,
 	upsertUser,
-	cleanupExpiredSessions,
 	getUserById,
 	sessionDurationHours,
 } from '@alexandria/core/platform';
@@ -98,9 +97,6 @@ sessionRoutes.post('/session', async (c) => {
 			role,
 			durationHours,
 		});
-
-		// Opportunistically clean up expired sessions
-		cleanupExpiredSessions(db).catch(() => {});
 
 		// Set session cookie
 		setCookie(c, '__session', session.token, {

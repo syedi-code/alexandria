@@ -2,6 +2,10 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import apiRouter from './api/router.js';
 import { Env } from '@alexandria/core';
+import {
+	cleanupExpiredSessions,
+	EXPIRED_SESSION_RETENTION_DAYS,
+} from '@alexandria/core/platform';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -53,4 +57,15 @@ app.route('/api', apiRouter);
 
 export default {
 	fetch: app.fetch,
+
+	// The daily cron in wrangler.toml. D1 has no TTL, and a cleanup fired from a
+	// request without waitUntil is cancelled when the response is sent, which is
+	// how 394 expired sessions accumulated.
+	async scheduled(_controller: ScheduledController, env: Env) {
+		const removed = await cleanupExpiredSessions(
+			env.DB,
+			EXPIRED_SESSION_RETENTION_DAYS
+		);
+		console.log(`[cron] removed ${removed} expired sessions`);
+	},
 };

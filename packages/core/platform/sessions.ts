@@ -163,12 +163,27 @@ export async function deleteUserSessions(
 		.run();
 }
 
+/** How long an expired session is kept: long enough to answer who signed in lately. */
+export const EXPIRED_SESSION_RETENTION_DAYS = 30;
+
 /**
- * Remove expired sessions. Returns count of deleted rows.
+ * Remove sessions that expired more than `retentionDays` ago. Returns the count.
+ *
+ * Compared through julianday(), not as text: rows written before createSession
+ * used toISOString() hold `2026-03-18 17:32:15`, later ones
+ * `2026-09-19T04:44:23.806Z`, and as strings a `T` sorts after the space, so a
+ * same-day ISO expiry never compared as past.
  */
-export async function cleanupExpiredSessions(db: D1Database): Promise<number> {
+export async function cleanupExpiredSessions(
+	db: D1Database,
+	retentionDays = 0
+): Promise<number> {
 	const result = await db
-		.prepare(`DELETE FROM sessions WHERE expires_at <= datetime('now')`)
+		.prepare(
+			`DELETE FROM sessions
+			  WHERE julianday(expires_at) <= julianday('now', ?)`
+		)
+		.bind(`-${retentionDays} days`)
 		.run();
 	return result.meta?.changes ?? 0;
 }
