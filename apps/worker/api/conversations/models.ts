@@ -17,18 +17,17 @@ export interface ModelEntry {
 /**
  * The models Scribe offers. Only models that hold up in a multi-step tool loop
  * belong here; a model that can't is left off rather than given a weaker mode.
+ *
+ * Kept short on purpose. Every entry is a model someone has to have an opinion
+ * about, and a roster of five where two were never chosen is five things to
+ * keep current for no reading anyone does.
  */
 export const MODELS: readonly ModelEntry[] = [
 	{
-		id: 'claude-sonnet-5',
-		label: 'Claude Sonnet 5',
-		provider: 'anthropic',
-		acceptsFiles: true,
-	},
-	{
-		id: 'claude-opus-5',
-		label: 'Claude Opus 5',
-		provider: 'anthropic',
+		// Not `gpt-5.6`: that is an alias for Sol, at twenty times the price.
+		id: 'gpt-5.6-luna',
+		label: 'GPT-5.6 Luna',
+		provider: 'openai',
 		acceptsFiles: true,
 	},
 	{
@@ -37,21 +36,28 @@ export const MODELS: readonly ModelEntry[] = [
 		provider: 'anthropic',
 		acceptsFiles: true,
 	},
-	{ id: 'gpt-5.5', label: 'GPT-5.5', provider: 'openai', acceptsFiles: true },
 	{
-		id: 'gemini-3.5-flash',
-		label: 'Gemini 3.5 Flash',
+		id: 'gemini-3.8-flash',
+		label: 'Gemini 3.8 Flash',
 		provider: 'google',
 		acceptsFiles: true,
 	},
 ];
 
-export const DEFAULT_MODEL_ID = 'claude-sonnet-5';
+/**
+ * Luna costs a fifth of Haiku's input and a quarter of its output, and scores
+ * higher. What it spends instead is time: minutes can pass before its first
+ * token, and every step of the loop pays that again. It is the default because
+ * one person uses this and would rather wait than be billed.
+ */
+export const DEFAULT_MODEL_ID = 'gpt-5.6-luna';
 
 /** Small, cheap models for naming conversations, one per provider. */
 const TITLE_MODEL_IDS: Record<Provider, string> = {
 	anthropic: 'claude-haiku-4-5-20251001',
-	openai: 'gpt-5.4-nano',
+	// The 5.6 family has no nano tier; Luna is the cheap tier. Titling runs
+	// after the answer, off the critical path, so its latency costs nothing.
+	openai: 'gpt-5.6-luna',
 	google: 'gemini-3.5-flash-lite',
 };
 
