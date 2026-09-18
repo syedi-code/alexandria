@@ -22,7 +22,10 @@ import {
 	streamTurn,
 	type ScribeMessage,
 } from '../api/conversations/chat.js';
-import { asTitle } from '../api/conversations/instructions.js';
+import {
+	asTitle,
+	SCRIBE_INSTRUCTIONS,
+} from '../api/conversations/instructions.js';
 import type { ModelEntry } from '../api/conversations/models.js';
 import { createAlexandriaMcp } from '../api/mcp/server.js';
 import mcpRoutes from '../api/mcp/index.js';
@@ -461,5 +464,45 @@ describe('naming a conversation', () => {
 
 	it('is short enough to sit in a rail', () => {
 		expect(asTitle('word '.repeat(60)).length).toBeLessThanOrEqual(72);
+	});
+});
+
+/**
+ * The reader could not follow a cited answer: quotations written twice, the
+ * second time in different words, with every citation piled at the end of the
+ * sentence. Conversations ce0188b1 and d4cae4ab on production.
+ */
+describe('how an answer is asked to cite', () => {
+	it('shows the model the shape of a woven citation', () => {
+		expect(SCRIBE_INSTRUCTIONS).toContain(
+			'still reads with the quoted words spoken in place'
+		);
+		expect(SCRIBE_INSTRUCTIONS).toContain('GOOD');
+		expect(SCRIBE_INSTRUCTIONS).toContain('BAD');
+	});
+
+	it('forbids collecting citations at the end', () => {
+		expect(SCRIBE_INSTRUCTIONS).toContain(
+			'Never collect citations at the end of a sentence or a paragraph'
+		);
+	});
+
+	it('forbids quoting in prose and then citing the same words', () => {
+		expect(SCRIBE_INSTRUCTIONS).toContain(
+			'Never write a quotation in your prose and then cite the same words'
+		);
+	});
+
+	// Paid on every step of the loop, so a rule that is not earning its place
+	// is a rule charged for on every turn of every conversation.
+	it('stays short enough to send on every step', () => {
+		expect(SCRIBE_INSTRUCTIONS.length).toBeLessThan(3000);
+	});
+
+	// The answer opened with four sentences of the model clearing its throat.
+	it('forbids a preface', () => {
+		expect(SCRIBE_INSTRUCTIONS).toContain(
+			'Your first word is the first word of the answer'
+		);
 	});
 });
