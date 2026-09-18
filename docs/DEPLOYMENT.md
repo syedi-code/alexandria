@@ -14,6 +14,17 @@ proxy, so nothing here has to know about them beyond a URL.
 | D1                         | `antisocial-media` (`069d3dc5-2f80-4333-be34-d3b1cf455af7`)                                                          | `antisocial-media-staging` (`ba85f6dc-715a-48de-bb9f-49d3907fbf79`)                    |
 | R2                         | `antisocial-media-files`                                                                                             | `antisocial-media-files-staging`                                                       |
 
+The production bucket holds one thing that is not alexandria's: scribe's
+typeface, under `scribe-fonts/`. GT Alpina is licensed to serve and not to
+redistribute, so it cannot live in scribe's repository; scribe's deploy copies
+it out of this prefix before building (scribe's `FONTS.md`). Nothing in
+alexandria reads, lists or signs these keys. Do not clear the prefix: the next
+scribe deploy fails without it.
+
+The worker also runs one cron (`[triggers]` in `wrangler.toml`, inherited by
+staging): daily at 04:17 UTC it deletes sessions that expired more than 30 days
+ago. D1 has no TTL of its own.
+
 Each frontend's Pages project has a `WORKER_URL` variable per environment:
 production points at `https://alexandria.socialeating.studio`, preview at the
 staging worker.
