@@ -78,7 +78,10 @@ budgeted.
 
 ### 5. Provider keys
 
-A provider without a key is left off the model roster; set any subset.
+A provider without a key is left off the model roster; set any subset. The
+roster is three models — `gpt-5.6-luna`, `claude-haiku-4-5-20251001`,
+`gemini-3.8-flash` — and the default is Luna, so without an OpenAI key Scribe
+falls back to whatever else has one.
 
 ```bash
 cd apps/worker
@@ -86,6 +89,14 @@ npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler secret put OPENAI_API_KEY
 npx wrangler secret put GOOGLE_GENERATIVE_AI_API_KEY
 ```
+
+The names are exactly these. The root `.env` on the developer's machine
+prefixes them (`ALEXANDRIA_OPENAI_API_KEY`) because it is shared with other
+projects, and the prefix has to be dropped on the way in — `availableModels()`
+filters on a key being present rather than erroring, so a misspelled name shows
+up as a model silently missing from the switcher. The AI keys are on the
+`BLACKLIST` in `cli/setup/sync-secrets.ts` and `sync-dev-vars.ts`, so the sync
+scripts will not do this for you.
 
 ### 6. Deploy, then measure CPU
 

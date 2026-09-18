@@ -30,6 +30,28 @@ import { chatTools, PAGE_TOOLS } from './tools.js';
 export const MAX_STEPS = 14;
 
 /**
+ * A ceiling on one whole turn, every step of it included.
+ *
+ * Without this a provider that never answers holds the turn open forever: the
+ * reader watches an animation that will not stop and there is no error to
+ * show. Generous, because the cheap models are the slow ones — Luna can take
+ * minutes to say its first word, and it pays that again on every step.
+ */
+const TURN_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * How often to write a comment into a silent stream.
+ *
+ * Between the response headers and the model's first token, nothing is sent.
+ * On a slow model that silence runs for minutes, and every hop in between —
+ * Cloudflare's edge, a carrier NAT, a phone that has locked — is free to read
+ * a silent connection as a dead one and close it. An SSE comment is two bytes
+ * of nothing that the parser at the far end discards, and it keeps the
+ * connection unambiguously alive.
+ */
+const HEARTBEAT_MS = 10 * 1000;
+
+/**
  * The last step is for writing, not for reading.
  *
  * A model that spends every step searching used to hit the cap in the middle
@@ -68,6 +90,8 @@ export interface Turn {
  */
 export function describeFailure(error: unknown): string {
 	const cause = RetryError.isInstance(error) ? error.lastError : error;
+	if (cause instanceof Error && cause.name === 'TimeoutError')
+		return 'The model took too long to answer and the turn was stopped.';
 	if (APICallError.isInstance(cause)) {
 		const { statusCode = 0, responseBody = '' } = cause;
 		if (/credit balance|insufficient_quota|billing/i.test(responseBody))
@@ -87,6 +111,49 @@ const isEmpty = (message: ChatMessage) =>
 	message.parts.every(
 		(part) => (part as { type: string }).type === 'step-start'
 	);
+
+/**
+ * The same bytes, with a comment written into every gap longer than
+ * `HEARTBEAT_MS`.
+ *
+ * A read already in flight is kept across pulls rather than reissued — a
+ * second read() on the same reader would drop whatever the first one is
+ * waiting for.
+ */
+export function withHeartbeat(
+	body: ReadableStream<Uint8Array>,
+	everyMs = HEARTBEAT_MS
+): ReadableStream<Uint8Array> {
+	const reader = body.getReader();
+	const ping = new TextEncoder().encode(': keep-alive\n\n');
+	let pending: Promise<ReadableStreamReadResult<Uint8Array>> | null = null;
+
+	return new ReadableStream({
+		async pull(controller) {
+			pending ??= reader.read();
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			const tick = new Promise<'tick'>((resolve) => {
+				timer = setTimeout(() => resolve('tick'), everyMs);
+			});
+
+			try {
+				const next = await Promise.race([pending, tick]);
+				if (next === 'tick') {
+					controller.enqueue(ping);
+					return;
+				}
+				pending = null;
+				if (next.done) controller.close();
+				else controller.enqueue(next.value);
+			} finally {
+				clearTimeout(timer);
+			}
+		},
+		cancel(reason) {
+			return reader.cancel(reason);
+		},
+	});
+}
 
 async function drain(stream: ReadableStream<unknown>): Promise<void> {
 	const reader = stream.getReader();
@@ -156,6 +223,7 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 				messages: modelMessages,
 				tools,
 				stopWhen: isStepCount(MAX_STEPS),
+				abortSignal: AbortSignal.timeout(TURN_TIMEOUT_MS),
 				prepareStep: ({ stepNumber }) =>
 					stepNumber < MAX_STEPS - 1
 						? {}
@@ -224,8 +292,13 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 		},
 	});
 
-	return createUIMessageStreamResponse({
+	const response = createUIMessageStreamResponse({
 		stream,
 		consumeSseStream: ({ stream: copy }) => turn.waitUntil(drain(copy)),
 	});
+
+	return new Response(
+		response.body && withHeartbeat(response.body),
+		response
+	);
 }
