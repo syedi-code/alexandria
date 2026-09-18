@@ -35,6 +35,12 @@ Every npm script in alexandria. The frontends live in their own repos (`stylus`,
 | `npm run sql:production -- <f>`   | Against production.                                             |
 | `npm run db:status:prod`          | Row counts and table metadata.                                  |
 | `npm run db:compare:staging-prod` | Diff two environments.                                          |
+| `npm run spend:prod`              | Model tokens and cost, per reader, per model.                   |
+
+`spend` reads the `usage` each assistant message already stores; it adds no
+accounting and enforces nothing. Rates live in `PRICES` at the top of
+`cli/db/model-spend.ts` and ship empty, so it reports tokens until you fill them
+in. `--since <date>` narrows the window, `--json` gives it to a script.
 
 ### Verification
 
