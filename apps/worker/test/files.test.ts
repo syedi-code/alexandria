@@ -31,11 +31,16 @@ const bucket = () => {
 			if (key !== KEY && key !== SPACED) return null;
 			const range = options?.range;
 			let body = BYTES;
-			if (range && 'suffix' in range) {
-				body = BYTES.slice(BYTES.length - range.suffix);
-			} else if (range) {
-				const offset = range.offset ?? 0;
-				body = BYTES.slice(offset, offset + (range.length ?? Infinity));
+			if (range) {
+				if ('suffix' in range) {
+					body = BYTES.slice(BYTES.length - range.suffix);
+				} else {
+					const offset = range.offset ?? 0;
+					body = BYTES.slice(
+						offset,
+						offset + (range.length ?? Infinity)
+					);
+				}
 			}
 			return {
 				body,
