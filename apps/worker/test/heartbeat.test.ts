@@ -9,7 +9,9 @@ function paced(chunks: { after: number; text: string }[]) {
 	return new ReadableStream<Uint8Array>({
 		async start(controller) {
 			for (const chunk of chunks) {
-				await new Promise((resolve) => setTimeout(resolve, chunk.after));
+				await new Promise((resolve) =>
+					setTimeout(resolve, chunk.after)
+				);
 				controller.enqueue(encoder.encode(chunk.text));
 			}
 			controller.close();
@@ -45,9 +47,9 @@ describe('withHeartbeat', () => {
 		const out = await readAll(
 			withHeartbeat(paced([{ after: 60, text: 'late' }]), 20)
 		);
-		expect(out.filter((part) => part.startsWith(':')).length).toBeGreaterThan(
-			0
-		);
+		expect(
+			out.filter((part) => part.startsWith(':')).length
+		).toBeGreaterThan(0);
 		expect(out.at(-1)).toBe('late');
 	});
 

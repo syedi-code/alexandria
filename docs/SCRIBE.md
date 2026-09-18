@@ -90,13 +90,13 @@ npx wrangler secret put OPENAI_API_KEY
 npx wrangler secret put GOOGLE_GENERATIVE_AI_API_KEY
 ```
 
-The names are exactly these. The root `.env` on the developer's machine
-prefixes them (`ALEXANDRIA_OPENAI_API_KEY`) because it is shared with other
-projects, and the prefix has to be dropped on the way in — `availableModels()`
-filters on a key being present rather than erroring, so a misspelled name shows
-up as a model silently missing from the switcher. The AI keys are on the
-`BLACKLIST` in `cli/setup/sync-secrets.ts` and `sync-dev-vars.ts`, so the sync
-scripts will not do this for you.
+The names are exactly these. The root `.env` on the developer's machine prefixes
+them (`ALEXANDRIA_OPENAI_API_KEY`) because it is shared with other projects, and
+the prefix has to be dropped on the way in — `availableModels()` filters on a
+key being present rather than erroring, so a misspelled name shows up as a model
+silently missing from the switcher. The AI keys are on the `BLACKLIST` in
+`cli/setup/sync-secrets.ts` and `sync-dev-vars.ts`, so the sync scripts will not
+do this for you.
 
 ### 6. Deploy, then measure CPU
 
