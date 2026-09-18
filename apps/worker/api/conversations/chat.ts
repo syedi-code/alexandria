@@ -22,7 +22,11 @@ import {
 	type ConversationRow,
 } from '@alexandria/core/conversations';
 import type { WorksToolContext } from '@alexandria/core/works';
-import { SCRIBE_INSTRUCTIONS, TITLE_INSTRUCTIONS } from './instructions.js';
+import {
+	asTitle,
+	SCRIBE_INSTRUCTIONS,
+	TITLE_INSTRUCTIONS,
+} from './instructions.js';
 import type { ModelEntry } from './models.js';
 import { chatTools, PAGE_TOOLS } from './tools.js';
 
@@ -175,7 +179,7 @@ async function nameConversation(turn: Turn): Promise<void> {
 		instructions: TITLE_INSTRUCTIONS,
 		prompt: textOf(turn.message),
 	});
-	const title = text.trim().slice(0, 120);
+	const title = asTitle(text);
 	if (title) {
 		await updateConversation(
 			turn.works.db,
