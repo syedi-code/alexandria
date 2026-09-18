@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { migratedTestDatabase, type TestDatabase } from './d1.js';
 import {
+	cleanupExpiredSessions,
 	createSession,
 	DEFAULT_SESSION_DURATION_HOURS,
 	extendSession,
@@ -142,5 +143,51 @@ describe('extendSession', () => {
 		await expect(
 			getSessionByToken(db.d1, session.token)
 		).resolves.not.toBeNull();
+	});
+});
+
+/**
+ * Production holds expiries in two formats — `2026-03-18 17:32:15` from before
+ * createSession used toISOString(), ISO after — and compared as text a
+ * same-day ISO expiry never counted as past.
+ */
+describe('cleanupExpiredSessions', () => {
+	const insert = (token: string, expiresAt: string) =>
+		db.raw
+			.prepare(
+				`INSERT INTO sessions (token, user_id, email, role, created_at, expires_at)
+				 VALUES (?, 'user-1', 'admin@example.test', 'admin', ?, ?)`
+			)
+			.run(token, expiresAt, expiresAt);
+	const iso = (msFromNow: number) =>
+		new Date(Date.now() + msFromNow).toISOString();
+	const sqlite = (msFromNow: number) =>
+		iso(msFromNow).slice(0, 19).replace('T', ' ');
+	const tokens = () =>
+		(
+			db.raw
+				.prepare(`SELECT token FROM sessions ORDER BY token`)
+				.all() as {
+				token: string;
+			}[]
+		).map((row) => row.token);
+	const HOUR = 60 * 60 * 1000;
+	const DAY = 24 * HOUR;
+
+	it('removes an ISO expiry from an hour ago, in either format', async () => {
+		insert('iso-past', iso(-HOUR));
+		insert('sqlite-past', sqlite(-HOUR));
+		insert('live', iso(HOUR));
+		await expect(cleanupExpiredSessions(db.d1)).resolves.toBe(2);
+		expect(tokens()).toEqual(['live']);
+	});
+
+	it('keeps what expired inside the retention window', async () => {
+		insert('recent', iso(-5 * DAY));
+		insert('old-iso', iso(-31 * DAY));
+		insert('old-sqlite', sqlite(-31 * DAY));
+		insert('live', iso(HOUR));
+		await expect(cleanupExpiredSessions(db.d1, 30)).resolves.toBe(2);
+		expect(tokens()).toEqual(['live', 'recent']);
 	});
 });

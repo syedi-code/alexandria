@@ -59,6 +59,11 @@ database_id = "8167ef4a-1f28-4d1c-870d-2f0c51e06887"
 #   npx wrangler secret put POLICY_AUD
 #   npx wrangler secret put ADMIN_EMAIL
 
+# Daily at 04:17 UTC: delete sessions that expired more than 30 days ago
+# (server.ts, scheduled). Inherited by [env.staging].
+[triggers]
+crons = ["17 4 * * *"]
+
 # =============================================================================
 # Staging Environment
 # =============================================================================
