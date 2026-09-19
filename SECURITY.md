@@ -3,7 +3,7 @@
 ## Reporting
 
 Open a
-[private security advisory](https://github.com/syedi-code/alexandria/security/advisories/new).
+[private security advisory](https://github.com/syedi-code/alexandria.socialeating.studio/security/advisories/new).
 Please do not open a public issue for a vulnerability.
 
 There is no bounty and no SLA. This is one person's library.
@@ -36,7 +36,9 @@ workflows run it before shipping. It belongs in `.dev.vars` and nowhere else.
 **MCP is a second front door.** `/api/mcp` is not session-authenticated. It sits
 behind its own Access application and verifies both the JWT's audience and the
 service token's client id, so a token issued for a different application cannot
-use it.
+use it. The server it mounts lives in
+[alexandria-mcp](https://github.com/syedi-code/alexandria-mcp), which has its
+own `SECURITY.md` for what the tools themselves expose.
 
 ## Known limits
 
