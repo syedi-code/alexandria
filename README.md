@@ -4,18 +4,21 @@ The backend. One Cloudflare Worker, one D1, one R2, everything under `/api/`.
 
 Two frontends read it and neither holds data of its own:
 
-|                                                                        |                                                                      |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [**stylus**](https://github.com/syedi-code/stylus.socialeating.studio) | Notes, thoughts, quotes, essays. `stylus.socialeating.studio`        |
-| [**scribe**](https://github.com/syedi-code/scribe.socialeating.studio) | Works, documents, and the reading half. `scribe.socialeating.studio` |
+|                                                    |                                                                              |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [**stylus**](https://github.com/syedi-code/stylus) | Notes, thoughts, quotes, essays. <https://stylus.socialeating.studio>        |
+| [**scribe**](https://github.com/syedi-code/scribe) | Works, documents, and the reading half. <https://scribe.socialeating.studio> |
 
 A third repository,
 [**alexandria-mcp**](https://github.com/syedi-code/alexandria-mcp), is the MCP
 server: the same library as five read-only tools a model can use. This worker
 mounts it at `/api/mcp`.
 
-alexandria itself answers at `alexandria.socialeating.studio`, and serves a
-plain index of what the library holds at the root of it.
+alexandria itself answers at **<https://alexandria.socialeating.studio>**, and
+serves a plain index of what the library holds at the root of it.
+`api.ibrahimsyed.io` is the same worker under its older name. Both sit behind
+Cloudflare Access, so an unauthenticated visit gets the login rather than the
+library.
 
 ## The architecture, in one diagram
 

@@ -3,7 +3,7 @@
 ## Reporting
 
 Open a
-[private security advisory](https://github.com/syedi-code/alexandria.socialeating.studio/security/advisories/new).
+[private security advisory](https://github.com/syedi-code/alexandria/security/advisories/new).
 Please do not open a public issue for a vulnerability.
 
 There is no bounty and no SLA. This is one person's library.
