@@ -129,6 +129,10 @@ needs a browser session and Scribe's frontend does not exist yet.
 
 ### 7. MCP, for you alone
 
+The server is [alexandria-mcp](https://github.com/syedi-code/alexandria-mcp), a
+repository of its own; this worker mounts it at `/api/mcp`. Its
+`docs/HOSTING.md` covers everything below and the self-hosting path as well.
+
 MCP clients authenticate with a Cloudflare Access **service token**. No OAuth.
 
 1. **Zero Trust → Access → Service Auth → Service Tokens**: create
