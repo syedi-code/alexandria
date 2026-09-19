@@ -68,7 +68,7 @@ packages/core/contract.ts  what a client needs to agree with the server
 apps/worker/api/         routes, mirroring the same split
 apps/worker/api/public.ts  the one route that answers without a session
 apps/worker/public/      the catalogue page at /, served as a static asset
-apps/worker/api/mcp/     the MCP server: works tools behind an Access service token
+apps/worker/api/mcp/     the MCP server mount; the server itself is alexandria-mcp
 apps/worker/api/conversations/  Scribe: the model roster, the agent loop, chat routes
 cli/                     setup, migration, backup, extraction tooling
 sql/migrations/          applied in order; tests replay them to build a schema
