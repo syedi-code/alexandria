@@ -3,15 +3,15 @@
 ## Reporting
 
 Open a
-[private security advisory](https://github.com/syedi-code/alexandria.socialeating.studio/security/advisories/new).
+[private security advisory](https://github.com/syedi-code/alexandria/security/advisories/new).
 Please do not open a public issue for a vulnerability.
 
-There is no bounty and no SLA. This is one person's library.
+There is no bounty and no SLA. Reports are read and answered as time allows.
 
 ## What the API assumes
 
-alexandria holds one person's reading and writing, behind Cloudflare Access.
-Every route under `/api/` requires a session, minted from an Access JWT by
+alexandria is a single-tenant deployment behind Cloudflare Access. Every route
+under `/api/` requires a session, minted from an Access JWT by
 `POST /api/session`. There is no anonymous surface and no registration.
 
 Three things carry more weight than the rest, and are the places to look first:
