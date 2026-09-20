@@ -17,6 +17,7 @@ import {
 	saveMessage,
 	updateConversation,
 	verifyAnswer,
+	withCollapsedQuotes,
 	type AnswerCitation,
 	type ChatMessage,
 	type ConversationRow,
@@ -272,9 +273,12 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 		},
 		onEnd: async ({ responseMessage }) => {
 			if (isEmpty(responseMessage)) return;
+			// A quotation the model wrote twice is written once from here on.
+			// The saved copy is what the next turn reads back and what a
+			// reader reloads, and both showed the passage doubled.
 			await saveMessage(works.db, {
 				conversationId: conversation.id,
-				message: responseMessage,
+				message: withCollapsedQuotes(responseMessage),
 				modelId: model.id,
 				usage: usage && {
 					inputTokens: usage.inputTokens,
