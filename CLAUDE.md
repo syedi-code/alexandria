@@ -133,6 +133,25 @@ geolocation and simulates the custom domain — so both obvious guards are
 useless. `npm run assert:deployable` fails a deploy whose target has it set, and
 the deploy action runs it. Keep it in `.dev.vars` only.
 
+**An instruction a model half-keeps is not a rule.** The instructions ask for
+the quoted words to be written once, inside the `<cite>`. Across production the
+model wrote them twice — the quotation in its prose, then the same words again
+in the citation — on 29 of 137 citations, and the rate did not move when the
+citation syntax was changed under it. It is not reliably reproducible either:
+the mode fires on about one answer in three, holds for a whole answer once it
+starts, and would not fire at all across twelve replays of the exact context
+that produced it. So a revised instruction cannot be shown to work, and the
+duplication is taken out deterministically instead —
+`collapseQuotedDuplicates()` in `conversations/citations.ts`, applied to the
+answer before it is saved. What is saved is what the next turn reads back, and
+an answer that doubled its quotations taught the turn after it to do the same.
+
+Only a quoted run immediately against the citation is collapsed — a quotation,
+one space, a cite of the same words, which is the shape every instance in
+production took. A quotation that merely appears again elsewhere in the answer
+is left alone: pairing quotations to distant citations by their shared words is
+what scribe's `anchorsFor()` did, and it paired 42 of 92.
+
 **Model-facing text is product code.** Tool descriptions (`works/tools.ts`) and
 instructions (`conversations/instructions.ts`, `mcp/server.ts`) decide how
 models behave. Change them deliberately, and keep them consistent with each
