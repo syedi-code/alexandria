@@ -12,6 +12,7 @@ import {
 	listMessages,
 	omitOldToolOutputs,
 	PageHandles,
+	collapseQuotedDuplicates,
 	parseCitations,
 	saveMessage,
 	updateConversation,
@@ -259,6 +260,77 @@ describe('answer citations', () => {
 		).toEqual([
 			{ handle: 'P4', quote: 'what he cannot forgive Hitler for' },
 		]);
+	});
+
+	/**
+	 * Production, 19 September: every citation in the answer arrived with its
+	 * quotation written out immediately before it, and the reader was shown
+	 * the passage twice over.
+	 */
+	it('are written once when the model wrote them twice', () => {
+		const answer =
+			'<author>Freud</author> says that the method “considers only what occurs to the dreamer” <cite P4>considers only what occurs to the dreamer</cite>.';
+
+		expect(collapseQuotedDuplicates(answer)).toBe(
+			'<author>Freud</author> says that the method <cite P4>considers only what occurs to the dreamer</cite>.'
+		);
+	});
+
+	// Every answer saved before <cite> is written in the bracketed forms, and
+	// the model doubled those too.
+	it('are written once in the older bracketed form', () => {
+		expect(
+			collapseQuotedDuplicates(
+				'He concludes that “the dream is a wish-fulfilment” [P3 "the dream is a wish-fulfilment"].'
+			)
+		).toBe('He concludes that [P3 "the dream is a wish-fulfilment"].');
+	});
+
+	// The model has written the same words with a different stop at the end of
+	// each copy. Whole runs are being compared, so the punctuation is folded.
+	it('are written once though the two copies stop differently', () => {
+		expect(
+			collapseQuotedDuplicates(
+				'He asks “who would ever have learnt how to write from a Greek?” <cite P9>who would ever have learnt how to write from a Greek!</cite>'
+			)
+		).toBe(
+			'He asks <cite P9>who would ever have learnt how to write from a Greek!</cite>'
+		);
+	});
+
+	/**
+	 * A quotation the reader meets again later in the answer is the answer
+	 * re-reading it, not a copy of the citation. Pairing the two by their
+	 * shared words is what scribe's anchorsFor() did, and it paired 42 of 92.
+	 */
+	it('leave a quotation that is not against the citation', () => {
+		const answer =
+			'He writes “the dream is a wish-fulfilment”, and the claim returns when he says <cite P3>the dream is a wish-fulfilment</cite>.';
+
+		expect(collapseQuotedDuplicates(answer)).toBe(answer);
+	});
+
+	it('leave a quotation that is not the one cited', () => {
+		const answer =
+			'He calls it “an entirely different proposition” <cite P3>the dream is a wish-fulfilment</cite>.';
+
+		expect(collapseQuotedDuplicates(answer)).toBe(answer);
+	});
+
+	it('take nothing out of an answer that wrote each quotation once', () => {
+		const answer =
+			'Europe is <cite P1>a civilization that uses its principles for trickery</cite>, and <cite P12>no one colonizes innocently</cite>.';
+
+		expect(collapseQuotedDuplicates(answer)).toBe(answer);
+	});
+
+	it('never change which citations an answer holds', () => {
+		const answer =
+			'A “first quoted passage here” <cite P1>first quoted passage here</cite> and “second quoted passage here” [P2 "second quoted passage here"].';
+		const collapsed = collapseQuotedDuplicates(answer);
+
+		expect(parseCitations(collapsed)).toEqual(parseCitations(answer));
+		expect(collapseQuotedDuplicates(collapsed)).toBe(collapsed);
 	});
 
 	it('are parsed however the model punctuates them', () => {
