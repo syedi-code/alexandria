@@ -299,6 +299,62 @@ describe('answer citations', () => {
 	});
 
 	/**
+	 * The instructions already tell the model not to put quotation marks
+	 * around quoted words. The day it keeps that half of the rule and still
+	 * writes the words twice, a rule that looked for quotation marks would go
+	 * blind — so it is the words that are compared, not the marks.
+	 */
+	it('are written once when the copy carried no quotation marks', () => {
+		expect(
+			collapseQuotedDuplicates(
+				'He says that the dream is a wish-fulfilment <cite P3>the dream is a wish-fulfilment</cite>.'
+			)
+		).toBe('He says that <cite P3>the dream is a wish-fulfilment</cite>.');
+	});
+
+	it('are written once whatever separates the two copies', () => {
+		for (const gap of [' ', ', ', '  ', ' — ', '; ']) {
+			expect(
+				collapseQuotedDuplicates(
+					`He says “the dream is a wish-fulfilment”${gap}<cite P3>the dream is a wish-fulfilment</cite>.`
+				)
+			).toBe('He says <cite P3>the dream is a wish-fulfilment</cite>.');
+		}
+	});
+
+	// The closing mark goes with the copy, so the opening one has to go too or
+	// the reader is shown a stray asterisk where an italic used to start.
+	it('take the marks the copy was opened with', () => {
+		expect(
+			collapseQuotedDuplicates(
+				'He says **the dream is a wish-fulfilment** <cite P3>the dream is a wish-fulfilment</cite>.'
+			)
+		).toBe('He says <cite P3>the dream is a wish-fulfilment</cite>.');
+	});
+
+	// A short run repeats innocently; five words is what the verifier calls a
+	// quote at all.
+	it('leave a repeat too short to be a quotation', () => {
+		const brief =
+			'He says the will to truth <cite P3>the will to truth</cite>.';
+		expect(collapseQuotedDuplicates(brief)).toBe(brief);
+	});
+
+	// `breathe` ends in the letters of `the`, and the run that follows it is
+	// the rest of the quote. Starting there would leave the reader `brea`.
+	it('never cut into the middle of a word', () => {
+		const tricky =
+			'He had nothing to breathe dream is a wish-fulfilment <cite P3>the dream is a wish-fulfilment</cite>.';
+		expect(collapseQuotedDuplicates(tricky)).toBe(tricky);
+	});
+
+	it('leave a copy the prose has already moved on from', () => {
+		const apart =
+			'The dream is a wish-fulfilment was the claim <cite P3>the dream is a wish-fulfilment</cite>.';
+		expect(collapseQuotedDuplicates(apart)).toBe(apart);
+	});
+
+	/**
 	 * A quotation the reader meets again later in the answer is the answer
 	 * re-reading it, not a copy of the citation. Pairing the two by their
 	 * shared words is what scribe's anchorsFor() did, and it paired 42 of 92.
