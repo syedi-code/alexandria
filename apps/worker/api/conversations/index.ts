@@ -23,6 +23,7 @@ import {
 	availableModels,
 	DEFAULT_MODEL_ID,
 	findModel,
+	lockedModels,
 	languageModel,
 	titleModel,
 } from './models.js';
@@ -95,6 +96,7 @@ app.get('/models', async (c) => {
 	const fallback = models.find((m) => m.id === DEFAULT_MODEL_ID) ?? models[0];
 	return c.json({
 		models,
+		locked: lockedModels(c.env, rosterFor(entitlement)),
 		default_model_id: fallback?.id ?? null,
 		allowance: allowance(entitlement),
 	});
