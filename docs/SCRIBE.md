@@ -78,16 +78,17 @@ budgeted.
 
 ### 5. Provider keys
 
-A provider without a key is left off the model roster; set any subset. The
-roster is three models — `gpt-5.6-luna`, `claude-haiku-4-5-20251001`,
-`gemini-3.8-flash` — and the default is Luna, so without an OpenAI key Scribe
-falls back to whatever else has one.
+A provider without a key is left off the model roster; set either or both. The
+roster is `gpt-5.6-luna` (free), `claude-sonnet-5` and
+`claude-haiku-4-5-20251001` (paid), and `gpt-5.6-sol` (the admin's alone), and
+the default is Luna, so without an OpenAI key Scribe falls back to whatever else
+has one. Secrets survive deploys; a key that stops working was replaced or
+revoked, not wiped.
 
 ```bash
 cd apps/worker
 npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler secret put OPENAI_API_KEY
-npx wrangler secret put GOOGLE_GENERATIVE_AI_API_KEY
 ```
 
 The names are exactly these. The root `.env` on the developer's machine prefixes

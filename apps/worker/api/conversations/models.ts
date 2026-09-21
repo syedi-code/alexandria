@@ -18,6 +18,11 @@ export interface ModelEntry {
 	 * is a fact about the model, and a list kept elsewhere goes stale.
 	 */
 	free: boolean;
+	/**
+	 * Only the admin may choose it: a model too dear to put on any plan, kept
+	 * for the times a better answer is worth paying for by hand.
+	 */
+	adminOnly?: boolean;
 }
 
 /**
@@ -38,16 +43,25 @@ export const MODELS: readonly ModelEntry[] = [
 		free: true,
 	},
 	{
-		id: 'claude-haiku-4-5-20251001',
-		label: 'Claude Haiku 4.5',
+		// Twenty times Luna's price. Never on a plan, so never on the plans page.
+		id: 'gpt-5.6-sol',
+		label: 'GPT-5.6 Sol',
+		provider: 'openai',
+		acceptsFiles: true,
+		free: false,
+		adminOnly: true,
+	},
+	{
+		id: 'claude-sonnet-5',
+		label: 'Claude Sonnet 5',
 		provider: 'anthropic',
 		acceptsFiles: true,
 		free: false,
 	},
 	{
-		id: 'gemini-3.8-flash',
-		label: 'Gemini 3.8 Flash',
-		provider: 'google',
+		id: 'claude-haiku-4-5-20251001',
+		label: 'Claude Haiku 4.5',
+		provider: 'anthropic',
 		acceptsFiles: true,
 		free: false,
 	},
@@ -81,8 +95,9 @@ const apiKey = (env: Env, provider: Provider) =>
 
 /**
  * The models a reader may choose: those whose provider key is set, and — for a
- * free reader — those marked free. `free` is a property of the reader, not of
- * the request, so it is passed in rather than read from anywhere here.
+ * free reader — those marked free. Only the admin's roster, `unlimited`, holds
+ * the admin's models. The plan is a property of the reader, not of the
+ * request, so it is passed in rather than read from anywhere here.
  */
 export function availableModels(
 	env: Env,
@@ -90,8 +105,23 @@ export function availableModels(
 ): ModelEntry[] {
 	return MODELS.filter(
 		(model) =>
-			apiKey(env, model.provider) && (plan !== 'free' || model.free)
+			apiKey(env, model.provider) &&
+			(plan === 'unlimited' || !model.adminOnly) &&
+			(plan !== 'free' || model.free)
 	);
+}
+
+/**
+ * The models a plan above the reader's would open: set up here, but not on
+ * their plan. Listed so a client can say *on Paid* rather than *no key set*;
+ * the admin's models are never among them, because no plan opens those.
+ */
+export function lockedModels(
+	env: Env,
+	plan: UserPlan | 'unlimited'
+): ModelEntry[] {
+	const open = new Set(availableModels(env, plan).map((model) => model.id));
+	return availableModels(env, 'paid').filter((model) => !open.has(model.id));
 }
 
 export function findModel(
