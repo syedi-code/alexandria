@@ -40,4 +40,7 @@ export interface MessageUsage {
 	inputTokens?: number;
 	outputTokens?: number;
 	totalTokens?: number;
+	/** Of `inputTokens`, what a cache served and what it cost to fill. */
+	cacheReadTokens?: number;
+	cacheWriteTokens?: number;
 }

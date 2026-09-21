@@ -41,6 +41,7 @@ const REQUIRED_TABLES = [
 	'users',
 	'sessions',
 	'access_audit_log',
+	'usage_events',
 ];
 
 async function main(): Promise<void> {

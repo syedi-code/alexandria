@@ -19,6 +19,7 @@ import {
 	verifyAnswer,
 	type ChatMessage,
 } from '../conversations/index.js';
+import { billingMonth, turnsThisMonth } from '../platform/index.js';
 
 let db: TestDatabase;
 let documentId: string;
@@ -478,5 +479,97 @@ describe('history sent to the model', () => {
 		expect(outputOf(sent[1])).toEqual({ omitted: true, handles: ['P1'] });
 		expect(outputOf(sent[3])).toEqual(outputOf(messages[3]));
 		expect(isOmittedToolOutput(outputOf(messages[1]))).toBe(false);
+	});
+});
+
+describe('the usage ledger', () => {
+	const turn = (id: string): ChatMessage => ({
+		id,
+		role: 'assistant',
+		parts: [{ type: 'text', text: 'An answer.' }],
+	});
+
+	it('writes one row per billed turn, billed to the conversation owner', async () => {
+		const conversation = await createConversation(db.d1, ids.userAdmin, {
+			model_id: 'claude-haiku-4-5-20251001',
+		});
+		await saveMessage(db.d1, {
+			conversationId: conversation.id,
+			message: turn('m1'),
+			modelId: 'claude-haiku-4-5-20251001',
+			usage: {
+				inputTokens: 80_000,
+				outputTokens: 1_000,
+				cacheReadTokens: 72_000,
+				cacheWriteTokens: 8_000,
+			},
+		});
+
+		const row = await db.d1
+			.prepare(`SELECT * FROM usage_events WHERE message_id = 'm1'`)
+			.first<Record<string, unknown>>();
+		expect(row).toMatchObject({
+			user_id: ids.userAdmin,
+			kind: 'chat_turn',
+			model_id: 'claude-haiku-4-5-20251001',
+			conversation_id: conversation.id,
+			input_tokens: 80_000,
+			cache_read_tokens: 72_000,
+			cache_write_tokens: 8_000,
+			output_tokens: 1_000,
+		});
+		expect(row!.billing_month).toBe(billingMonth());
+	});
+
+	it('counts a user’s turns this month, and nobody else’s', async () => {
+		const mine = await createConversation(db.d1, ids.userAdmin, {
+			model_id: 'gpt-5.6-luna',
+		});
+		const theirs = await createConversation(db.d1, ids.userOther, {
+			model_id: 'gpt-5.6-luna',
+		});
+		for (const [id, conversationId] of [
+			['a', mine.id],
+			['b', mine.id],
+			['c', theirs.id],
+		] as const) {
+			await saveMessage(db.d1, {
+				conversationId,
+				message: turn(id),
+				usage: { inputTokens: 10, outputTokens: 1 },
+			});
+		}
+
+		expect(await turnsThisMonth(db.d1, ids.userAdmin)).toBe(2);
+		expect(await turnsThisMonth(db.d1, ids.userOther)).toBe(1);
+	});
+
+	it('leaves no row for a turn that reported no usage', async () => {
+		const conversation = await createConversation(db.d1, ids.userAdmin, {
+			model_id: 'gpt-5.6-luna',
+		});
+		await saveMessage(db.d1, {
+			conversationId: conversation.id,
+			message: turn('failed'),
+		});
+		expect(await turnsThisMonth(db.d1, ids.userAdmin)).toBe(0);
+	});
+
+	it('does not double-count a message saved twice as it streams', async () => {
+		const conversation = await createConversation(db.d1, ids.userAdmin, {
+			model_id: 'gpt-5.6-luna',
+		});
+		for (const inputTokens of [10, 4_000]) {
+			await saveMessage(db.d1, {
+				conversationId: conversation.id,
+				message: turn('same'),
+				usage: { inputTokens, outputTokens: 1 },
+			});
+		}
+		expect(await turnsThisMonth(db.d1, ids.userAdmin)).toBe(1);
+		const row = await db.d1
+			.prepare(`SELECT input_tokens FROM usage_events WHERE id = 'same'`)
+			.first<{ input_tokens: number }>();
+		expect(row?.input_tokens).toBe(4_000);
 	});
 });

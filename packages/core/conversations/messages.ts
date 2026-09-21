@@ -4,6 +4,7 @@ import {
 	runStatements,
 	type SqlStatement,
 } from '../platform/sql.js';
+import { usageEventStatement } from '../platform/usage.js';
 import type { AnswerCitation } from './citations.js';
 import type { ChatMessage, MessageUsage } from './schema.js';
 
@@ -109,6 +110,22 @@ export function saveMessageStatements(
 			sql: `UPDATE conversations SET updated_at = ? WHERE id = ?`,
 			params: [now, conversationId],
 		},
+		// Usage goes to the ledger in the same transaction that saves the
+		// message, so the two can never disagree about what a turn cost.
+		...(input.usage
+			? [
+					usageEventStatement(
+						{
+							kind: 'chat_turn',
+							modelId: input.modelId,
+							conversationId,
+							messageId: message.id,
+							...input.usage,
+						},
+						now
+					),
+				]
+			: []),
 	];
 }
 

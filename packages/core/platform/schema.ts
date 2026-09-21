@@ -12,7 +12,10 @@ export const UserSchema = z.object({
 	idp_type: z.string().max(MAX_LENGTHS.SHORT).nullable().optional(),
 	first_seen: z.string(),
 	last_seen: z.string(),
+	plan: z.enum(['free', 'paid']).default('free'),
 });
+
+export type UserPlan = 'free' | 'paid';
 
 export const UserInput = z.object({
 	id: z.string().max(MAX_LENGTHS.ID),

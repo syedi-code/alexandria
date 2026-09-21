@@ -98,6 +98,7 @@ const MODEL: ModelEntry = {
 	label: 'Mock',
 	provider: 'anthropic',
 	acceptsFiles: false,
+	free: true,
 };
 
 const question = (text: string): ScribeMessage => ({
@@ -110,7 +111,8 @@ async function runTurn(
 	conversation: ConversationRow,
 	text: string,
 	model: MockLanguageModelV4,
-	titleModel?: MockLanguageModelV4
+	titleModel?: MockLanguageModelV4,
+	redactToolOutput = false
 ) {
 	const pending: Promise<unknown>[] = [];
 	const response = await streamTurn({
@@ -125,6 +127,7 @@ async function runTurn(
 		model: MODEL,
 		languageModel: model,
 		titleModel,
+		redactToolOutput,
 		waitUntil: (promise) => pending.push(promise),
 	});
 	const body = await response.text();
@@ -519,5 +522,60 @@ describe('how an answer is asked to cite', () => {
 		expect(SCRIBE_INSTRUCTIONS).toContain(
 			'Your first word is the first word of the answer'
 		);
+	});
+});
+
+describe('what a reader who is not the admin is streamed', () => {
+	const PAGE_TEXT = 'the abyss will also gaze into thee';
+	let conversation: ConversationRow;
+
+	beforeEach(async () => {
+		conversation = await createConversation(db.d1, ids.userOther, {
+			model_id: MODEL.id,
+		});
+	});
+
+	const reading = () =>
+		scripted(
+			toolCall('read_pages', { document_id: documentId, from: 1, to: 2 }),
+			answer('Nietzsche warns about monsters.')
+		);
+
+	it('streams the page text to the admin', async () => {
+		const body = await runTurn(
+			conversation,
+			'What about the abyss?',
+			reading(),
+			undefined,
+			false
+		);
+		expect(body).toContain(PAGE_TEXT);
+	});
+
+	it('does not stream the page text to anyone else', async () => {
+		const body = await runTurn(
+			conversation,
+			'What about the abyss?',
+			reading(),
+			undefined,
+			true
+		);
+		expect(body).not.toContain(PAGE_TEXT);
+		// The handle survives, so the reader still sees which page was read
+		// and a citation still resolves.
+		expect(body).toContain('"redacted":true');
+		expect(body).toContain('tool-output-available');
+	});
+
+	it('still saves the page text, because the next turn reads it back', async () => {
+		await runTurn(
+			conversation,
+			'What about the abyss?',
+			reading(),
+			undefined,
+			true
+		);
+		const saved = await listMessages(db.d1, ids.userOther, conversation.id);
+		expect(JSON.stringify(saved)).toContain(PAGE_TEXT);
 	});
 });
