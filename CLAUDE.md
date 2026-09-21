@@ -133,6 +133,37 @@ geolocation and simulates the custom domain — so both obvious guards are
 useless. `npm run assert:deployable` fails a deploy whose target has it set, and
 the deploy action runs it. Keep it in `.dev.vars` only.
 
+**A model can leave the citation grammar altogether.** On 20 September a heavy
+turn came back with no citations at all: the model had written every one in
+OpenAI's own file-search notation —
+`【P5†Inorganic matter is the maternal bosom】` — rather than in ours. Nothing
+parsed, so nothing was verified, no `data-citations` was written, and the reader
+was shown the brackets. The handles and the quoted words were right the whole
+time; only the punctuation was foreign.
+
+It is reproducible and it is load-dependent. On a light turn the model writes
+`<cite>` every time; on the turn that read eight ranges and the index it wrote
+the foreign shape in two runs out of two, once mixed in with nine correct cites
+in the same answer — an answer that looks entirely normal while two of its
+claims are silently uncheckable.
+
+`normaliseCitationShapes()` translates the shape into ours before anything reads
+it, in `verifyAnswer` and again before the answer is saved. Regenerating the
+answer was the other option and it is the wrong trade: a second pass over that
+context costs minutes of a model that is already slow, to change a delimiter on
+a citation that would have verified. The marker hangs off its word the way a
+footnote number does, so the space a quotation needs and a footnote number does
+not is part of the translation.
+
+It is deliberately **not** a widening of `CITATION`. There is one citation
+grammar and scribe has to agree with it forever; `FOREIGN_SHAPES` is a table of
+foreign spellings in front of it, which the next shape can be added to without
+touching the grammar or the other repo.
+
+What is still missing is the other half: an answer carrying a `P`-handle that no
+citation claimed is an answer whose citation we failed to read, and it should
+fail the turn rather than reach a reader looking complete.
+
 **An instruction a model half-keeps is not a rule.** The instructions ask for
 the quoted words to be written once, inside the `<cite>`. Across production the
 model wrote them twice — the quotation in its prose, then the same words again

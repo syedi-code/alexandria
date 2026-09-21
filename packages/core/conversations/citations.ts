@@ -51,6 +51,58 @@ export function parseCitations(text: string): CitationMarker[] {
 }
 
 /**
+ * A citation in a notation this app never asked for.
+ *
+ * On 20 September the model stopped writing `<cite>` on a heavy turn and
+ * wrote OpenAI's own file-search annotation instead —
+ * `【P5†Inorganic matter is the maternal bosom】`. The handle is right and the
+ * quoted words are right; only the punctuation is foreign. Nothing parsed it,
+ * so nothing was verified, no `data-citations` was written at all, and the
+ * reader was shown the brackets.
+ *
+ * It is reproducible and it is load-dependent: on a light turn the model
+ * writes `<cite>` every time; on the turn that read eight ranges and the
+ * index it wrote the foreign shape in two runs out of two, once mixed in with
+ * nine correct cites in the same answer.
+ *
+ * Regenerating the answer was the other option and it is the wrong trade: a
+ * second pass over that context costs minutes of a model that is already slow,
+ * to change a delimiter on a citation that would have verified. So the shape
+ * is translated into the one this app speaks, before anything reads it.
+ *
+ * This is deliberately not a widening of `CITATION`. There is one citation
+ * grammar and scribe has to agree with it forever; this is a table of foreign
+ * spellings sitting in front of it, which is a thing the next shape can be
+ * added to without touching the grammar or the other repo.
+ */
+/**
+ * 【P5†quoted words】 — OpenAI file search. The handle is the whole of what
+ * precedes the dagger; anything else is not a handle we minted.
+ *
+ * The marker is written flush against the word it hangs off, the way a
+ * footnote number is. A quotation is not a footnote number, so the space its
+ * notation did not need is part of the translation — without it the reader
+ * gets `inorganic matter“Inorganic matter is the maternal bosom”`.
+ */
+const FOREIGN_SHAPES: readonly [RegExp, (...groups: string[]) => string][] = [
+	[
+		/(\S)?[ \t]*【\s*(P\d+)\s*†([^】]*)】/gu,
+		(before, handle, quote) =>
+			`${before ? `${before} ` : ''}<cite ${handle}>${quote}</cite>`,
+	],
+];
+
+export function normaliseCitationShapes(text: string): string {
+	let out = text;
+	for (const [shape, canonical] of FOREIGN_SHAPES) {
+		out = out.replace(shape, (_whole, ...groups) =>
+			canonical(...(groups.slice(0, -2) as string[]))
+		);
+	}
+	return out;
+}
+
+/**
  * A quotation the model wrote out twice.
  *
  * The instructions ask for the quoted words to be written once, inside the
@@ -142,7 +194,17 @@ export function collapseQuotedDuplicates(text: string): string {
 	return out + text.slice(cursor);
 }
 
-/** An answer with every quotation written once, wherever its text is held. */
+/**
+ * The answer as it should be stored: every citation in this app's own
+ * notation, and every quotation written once.
+ *
+ * What is saved is what a reader reloads and what the next turn reads back, so
+ * a foreign shape left here would be shown as markup for ever and taught to
+ * the turn after it.
+ *
+ * (The export keeps its narrower name because `chat.ts` is being worked on in
+ * another branch as this lands; it is renamed the moment that is merged.)
+ */
 export function withCollapsedQuotes<M extends { parts: readonly unknown[] }>(
 	message: M
 ): M {
@@ -151,7 +213,12 @@ export function withCollapsedQuotes<M extends { parts: readonly unknown[] }>(
 		parts: message.parts.map((part) => {
 			const { type, text } = part as { type?: string; text?: string };
 			return type === 'text' && text
-				? { ...(part as object), text: collapseQuotedDuplicates(text) }
+				? {
+						...(part as object),
+						text: collapseQuotedDuplicates(
+							normaliseCitationShapes(text)
+						),
+					}
 				: part;
 		}),
 	};
@@ -163,10 +230,12 @@ export async function verifyAnswer(
 	handles: PageHandles,
 	text: string
 ): Promise<AnswerCitation[]> {
-	const markers = parseCitations(text).map((marker) => ({
-		...marker,
-		ref: handles.resolve(marker.handle) ?? null,
-	}));
+	const markers = parseCitations(normaliseCitationShapes(text)).map(
+		(marker) => ({
+			...marker,
+			ref: handles.resolve(marker.handle) ?? null,
+		})
+	);
 
 	const checks = await verifyCitations(
 		db,
