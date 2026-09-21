@@ -15,8 +15,7 @@ server: the same library as five read-only tools a model can use. This worker
 mounts it at `/api/mcp`.
 
 alexandria itself answers at **<https://alexandria.socialeating.studio>**, and
-serves a plain index of what the library holds at the root of it.
-`api.ibrahimsyed.io` is the same worker under its older name. Both sit behind
+serves a plain index of what the library holds at the root of it. It sits behind
 Cloudflare Access, so an unauthenticated visit gets the login rather than the
 library.
 

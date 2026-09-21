@@ -21,11 +21,6 @@ compatibility_date = "2025-08-24"
 pattern = "alexandria.socialeating.studio"
 custom_domain = true
 
-# Kept so existing clients and bookmarks do not break.
-[[routes]]
-pattern = "api.ibrahimsyed.io"
-custom_domain = true
-
 # The catalogue page at /. `not_found_handling = "none"` is load-bearing: only
 # an exact asset match is served from here, so every path that is not a file in
 # public/ — every /api/ route — still reaches the worker.

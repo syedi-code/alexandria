@@ -8,7 +8,7 @@ proxy, so nothing here has to know about them beyond a URL.
 
 |                            | Production                                                                                                           | Staging                                                                                |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **alexandria** (this repo) | Worker `antisocial-worker` at `alexandria.socialeating.studio` and `api.ibrahimsyed.io`                              | Worker `antisocial-worker-staging` at `antisocial-worker-staging.iysyed01.workers.dev` |
+| **alexandria** (this repo) | Worker `antisocial-worker` at `alexandria.socialeating.studio`                                                       | Worker `antisocial-worker-staging` at `antisocial-worker-staging.iysyed01.workers.dev` |
 | **stylus**                 | Pages `stylus`, branch `main`, at `stylus.socialeating.studio`, `anti.socialeating.studio`, `journal.ibrahimsyed.io` | Pages `stylus`, branch `staging`, at `staging.stylus-64v.pages.dev`                    |
 | **scribe**                 | Pages `scribe`, branch `main`, at `scribe.socialeating.studio`                                                       | none — production only until it needs one                                              |
 | D1                         | `antisocial-media` (`069d3dc5-2f80-4333-be34-d3b1cf455af7`)                                                          | `antisocial-media-staging` (`ba85f6dc-715a-48de-bb9f-49d3907fbf79`)                    |
@@ -77,9 +77,10 @@ behind Cloudflare Access — never by CI.
 
 ## Custom domains
 
-`alexandria.socialeating.studio` and `api.ibrahimsyed.io` are `custom_domain`
-routes in `apps/worker/wrangler.toml`. wrangler provisions their DNS records on
-deploy; there is nothing to click.
+`alexandria.socialeating.studio` is a `custom_domain` route in
+`apps/worker/wrangler.toml`. wrangler provisions its DNS record on deploy; there
+is nothing to click. The worker's old hostname, `api.ibrahimsyed.io`, was
+retired on 2026-09-21.
 
 Pages custom domains are attached to the Pages project, with a proxied CNAME to
 `<project>.pages.dev` on the zone.
