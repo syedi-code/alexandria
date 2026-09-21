@@ -114,8 +114,7 @@ across everything, and hitting the cap breaks writes for stylus too. Add
 | **Staging**    | `antisocial-worker-staging` | `antisocial-media-staging`  |
 | **Production** | `antisocial-worker`         | `antisocial-media`          |
 
-The production worker serves `alexandria.socialeating.studio` and
-`api.ibrahimsyed.io`.
+The production worker serves `alexandria.socialeating.studio`.
 
 The worker, the database and the bucket keep their old names on purpose.
 Cloudflare cannot rename a D1 database or an R2 bucket, and "renaming" one means
