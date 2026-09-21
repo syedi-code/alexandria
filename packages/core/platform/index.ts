@@ -8,5 +8,6 @@ export * from './schema.js';
 export * from './users.js';
 export * from './sessions.js';
 export * from './audit.js';
+export * from './usage.js';
 export * from './sql.js';
 export * from './file-tokens.js';

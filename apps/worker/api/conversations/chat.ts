@@ -9,11 +9,13 @@ import {
 	streamText,
 	type LanguageModel,
 	type LanguageModelUsage,
+	type ModelMessage,
 	type UIMessage,
 } from 'ai';
 import {
 	omitOldToolOutputs,
 	PageHandles,
+	redactLibraryText,
 	saveMessage,
 	updateConversation,
 	verifyAnswer,
@@ -72,10 +74,54 @@ const LAST_STEP = [
 	'still open. Do not say that you ran out of steps.',
 ].join(' ');
 
+/**
+ * A prefix the model has already been shown costs a tenth to show again — but
+ * only up to a breakpoint, and only Anthropic wants the breakpoint marked.
+ * OpenAI and Google cache the same prefixes on their own and ignore this
+ * marker, so it is set for every provider and read by one.
+ *
+ * It moves to the end of the messages on every step, which is where the saving
+ * is: a turn is up to fourteen steps, and each one re-sends every page the
+ * ones before it read. Earlier markers are cleared as it moves, because
+ * Anthropic keeps four breakpoints and fourteen steps would otherwise leave
+ * fourteen. Moving it does not cost a re-read — the longest cached prefix is
+ * still matched.
+ *
+ * Across turns there is nothing to cache: `omitOldToolOutputs()` rewrites the
+ * history before the last two user turns, which changes the prefix every time.
+ * That is the better trade — it drops the page text rather than billing a
+ * tenth for it — and it is why this is not placed on the history as well.
+ */
+export function withCacheBreakpoint(messages: ModelMessage[]): ModelMessage[] {
+	const last = messages.length - 1;
+	return messages.map((message, i) => {
+		const { cacheControl: _moved, ...anthropic } =
+			message.providerOptions?.anthropic ?? {};
+		return {
+			...message,
+			providerOptions: {
+				...message.providerOptions,
+				anthropic:
+					i === last
+						? { ...anthropic, cacheControl: { type: 'ephemeral' } }
+						: anthropic,
+			},
+		} as ModelMessage;
+	});
+}
+
 export type ScribeMessage = UIMessage<
-	{ model_id: string },
+	{ model_id: string; allowance?: Allowance },
 	{ citations: AnswerCitation[] }
 >;
+
+/** What is left of this month, echoed back so the client can show a counter. */
+export interface Allowance {
+	plan: 'free' | 'paid';
+	used: number;
+	limit: number | null;
+	resets_at: string;
+}
 
 export interface Turn {
 	works: WorksToolContext;
@@ -86,6 +132,16 @@ export interface Turn {
 	languageModel: LanguageModel;
 	/** Names an untitled conversation after its first question. */
 	titleModel?: LanguageModel;
+	/**
+	 * Whether to take the library's text out of tool results on the way to this
+	 * client. Applied to the encoded bytes on the way out, not to the chunks
+	 * as they are written — `createUIMessageStream` builds the message it
+	 * saves out of what is written, so redacting there would redact the stored
+	 * copy too, and the next turn would read its own pages back blank.
+	 */
+	redactToolOutput?: boolean;
+	/** Reported to the client with the finished answer. */
+	allowance?: Allowance;
 	waitUntil(promise: Promise<unknown>): void;
 }
 
@@ -158,6 +214,62 @@ export function withHeartbeat(
 			return reader.cancel(reason);
 		},
 	});
+}
+
+/**
+ * One SSE line with any tool output in it redacted. Lines that are not data,
+ * or not JSON, or not a tool result, are passed through untouched.
+ */
+function redactLine(line: string): string {
+	if (!line.startsWith('data: ')) return line;
+	let chunk: { type?: string; output?: unknown };
+	try {
+		chunk = JSON.parse(line.slice('data: '.length));
+	} catch {
+		return line;
+	}
+	if (chunk?.type !== 'tool-output-available') return line;
+	return `data: ${JSON.stringify({
+		...chunk,
+		output: redactLibraryText(chunk.output),
+	})}`;
+}
+
+/**
+ * The same stream with the library's own text taken out of every tool result.
+ *
+ * It works on the encoded bytes rather than on the chunks, because the chunks
+ * are also what the finished message is assembled from: redact them and the
+ * saved answer loses the pages it was written from, and the turn after it
+ * reads them back empty. A test holds that line.
+ *
+ * Whole lines only — an SSE event split across two reads is buffered until the
+ * newline that ends it arrives.
+ */
+export function withRedactedToolOutput(
+	body: ReadableStream<Uint8Array>
+): ReadableStream<Uint8Array> {
+	const decoder = new TextDecoder();
+	const encoder = new TextEncoder();
+	const redact = (text: string) =>
+		encoder.encode(text.split('\n').map(redactLine).join('\n'));
+	let buffered = '';
+
+	return body.pipeThrough(
+		new TransformStream<Uint8Array, Uint8Array>({
+			transform(chunk, controller) {
+				buffered += decoder.decode(chunk, { stream: true });
+				const end = buffered.lastIndexOf('\n');
+				if (end === -1) return;
+				const whole = buffered.slice(0, end + 1);
+				buffered = buffered.slice(end + 1);
+				controller.enqueue(redact(whole));
+			},
+			flush(controller) {
+				if (buffered) controller.enqueue(redact(buffered));
+			},
+		})
+	);
 }
 
 async function drain(stream: ReadableStream<unknown>): Promise<void> {
@@ -268,7 +380,16 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 			writer.write({
 				type: 'finish',
 				finishReason: await result.finishReason,
-				messageMetadata: { model_id: model.id },
+				messageMetadata: {
+					model_id: model.id,
+					// One turn later than the count the route checked, which is
+					// this turn: the reader is told what they have left, not
+					// what they had.
+					allowance: turn.allowance && {
+						...turn.allowance,
+						used: turn.allowance.used + 1,
+					},
+				},
 			});
 		},
 		onEnd: async ({ responseMessage }) => {
@@ -284,6 +405,8 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 					inputTokens: usage.inputTokens,
 					outputTokens: usage.outputTokens,
 					totalTokens: usage.totalTokens,
+					cacheReadTokens: usage.inputTokenDetails?.cacheReadTokens,
+					cacheWriteTokens: usage.inputTokenDetails?.cacheWriteTokens,
 				},
 				citations,
 			});
@@ -305,8 +428,10 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 		consumeSseStream: ({ stream: copy }) => turn.waitUntil(drain(copy)),
 	});
 
-	return new Response(
-		response.body && withHeartbeat(response.body),
-		response
-	);
+	const redacted =
+		turn.redactToolOutput && response.body
+			? withRedactedToolOutput(response.body)
+			: response.body;
+
+	return new Response(redacted && withHeartbeat(redacted), response);
 }

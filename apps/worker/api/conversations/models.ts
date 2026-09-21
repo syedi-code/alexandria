@@ -2,7 +2,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogle } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModel } from 'ai';
-import type { Env } from '@alexandria/core/platform';
+import type { Env, UserPlan } from '@alexandria/core/platform';
 
 export type Provider = 'anthropic' | 'openai' | 'google';
 
@@ -12,6 +12,12 @@ export interface ModelEntry {
 	provider: Provider;
 	/** Whether the model can be shown a page as an image or PDF. */
 	acceptsFiles: boolean;
+	/**
+	 * Whether a free reader may choose it. The tiering lives next to the model
+	 * rather than in a list somewhere else, because which model someone gets
+	 * is a fact about the model, and a list kept elsewhere goes stale.
+	 */
+	free: boolean;
 }
 
 /**
@@ -29,18 +35,21 @@ export const MODELS: readonly ModelEntry[] = [
 		label: 'GPT-5.6 Luna',
 		provider: 'openai',
 		acceptsFiles: true,
+		free: true,
 	},
 	{
 		id: 'claude-haiku-4-5-20251001',
 		label: 'Claude Haiku 4.5',
 		provider: 'anthropic',
 		acceptsFiles: true,
+		free: false,
 	},
 	{
 		id: 'gemini-3.8-flash',
 		label: 'Gemini 3.8 Flash',
 		provider: 'google',
 		acceptsFiles: true,
+		free: false,
 	},
 ];
 
@@ -70,12 +79,27 @@ const API_KEYS: Record<Provider, keyof Env> = {
 const apiKey = (env: Env, provider: Provider) =>
 	env[API_KEYS[provider]] as string | undefined;
 
-export function availableModels(env: Env): ModelEntry[] {
-	return MODELS.filter((model) => apiKey(env, model.provider));
+/**
+ * The models a reader may choose: those whose provider key is set, and — for a
+ * free reader — those marked free. `free` is a property of the reader, not of
+ * the request, so it is passed in rather than read from anywhere here.
+ */
+export function availableModels(
+	env: Env,
+	plan: UserPlan | 'unlimited' = 'unlimited'
+): ModelEntry[] {
+	return MODELS.filter(
+		(model) =>
+			apiKey(env, model.provider) && (plan !== 'free' || model.free)
+	);
 }
 
-export function findModel(env: Env, id: string): ModelEntry | undefined {
-	return availableModels(env).find((model) => model.id === id);
+export function findModel(
+	env: Env,
+	id: string,
+	plan: UserPlan | 'unlimited' = 'unlimited'
+): ModelEntry | undefined {
+	return availableModels(env, plan).find((model) => model.id === id);
 }
 
 function providerModel(

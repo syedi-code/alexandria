@@ -3,6 +3,7 @@
 exports[`the API surface > is unchanged by the module split 1`] = `
 [
   "POST /session",
+  "DELETE /session",
   "GET /catalogue",
   "GET /me",
   "GET /books/library",
@@ -172,6 +173,8 @@ exports[`the API surface > is unchanged by the module split 1`] = `
   "PATCH /conversations/:id",
   "DELETE /conversations/:id",
   "POST /conversations/:id/chat",
+  "GET /plans",
+  "POST /billing/checkout",
   "POST /files/sign",
   "POST /files/sign",
   "GET /files/*",

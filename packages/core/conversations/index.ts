@@ -11,3 +11,4 @@ export * from './messages.js';
 export * from './handles.js';
 export * from './citations.js';
 export * from './history.js';
+export * from './redaction.js';
