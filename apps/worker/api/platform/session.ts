@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
-import { getCookie, setCookie } from 'hono/cookie';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Env, AuthContext } from '@alexandria/core';
 import {
 	createSession,
+	deleteSession,
 	getSessionByToken,
 	upsertUser,
 	getUserById,
@@ -127,6 +128,18 @@ sessionRoutes.post('/session', async (c) => {
 	}
 });
 
+// DELETE /api/session — sign out.
+// Signing out of Access alone is not enough: POST /session answers with any
+// session the cookie still names, so the next person to sign in on this
+// browser would be told they were the last one. Mounted before the session
+// middleware so a cookie that has already expired can still be cleared.
+sessionRoutes.delete('/session', async (c) => {
+	const token = getCookie(c, '__session');
+	if (token && c.env.DB) await deleteSession(c.env.DB, token);
+	deleteCookie(c, '__session', { path: '/api' });
+	return c.body(null, 204);
+});
+
 // GET /me — return authenticated user identity and role
 identityRoutes.get('/me', async (c) => {
 	const authContext = c.get('authContext');
@@ -153,6 +166,7 @@ identityRoutes.get('/me', async (c) => {
 			name: userRecord?.name ?? null,
 			idp_type: userRecord?.idp_type ?? null,
 			role: authContext.role,
+			plan: userRecord?.plan ?? 'free',
 		},
 		contract: apiContract(),
 	});

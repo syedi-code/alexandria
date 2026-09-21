@@ -1,7 +1,11 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import type { AuthContext, Env } from '@alexandria/core/platform';
-import { friendlyZodError } from '@alexandria/core/platform';
+import type { AuthContext, Entitlement, Env } from '@alexandria/core/platform';
+import {
+	entitlementFor,
+	friendlyZodError,
+	hasTurnsLeft,
+} from '@alexandria/core/platform';
 import {
 	ConversationInput,
 	ConversationPatch,
@@ -10,6 +14,7 @@ import {
 	getConversation,
 	listConversations,
 	listMessages,
+	redactToolOutputs,
 	updateConversation,
 } from '@alexandria/core/conversations';
 import { requireAuth } from '../auth.js';
@@ -31,8 +36,24 @@ app.use('/conversations/*', requireAuth());
 app.use('/conversations', requireAuth());
 app.use('/models', requireAuth());
 
-const userId = (c: { get(key: 'authContext'): AuthContext }) =>
-	c.get('authContext').user.id;
+type Ctx = { get(key: 'authContext'): AuthContext };
+
+const userId = (c: Ctx) => c.get('authContext').user.id;
+const role = (c: Ctx) => c.get('authContext').role;
+
+/**
+ * Which roster a reader sees. The admin is not on a plan, so their entitlement
+ * carries no limit and they get every model whose key is set.
+ */
+const rosterFor = (e: Entitlement) => (e.limit === null ? 'unlimited' : e.plan);
+
+/** What the client shows as "17 of 20 this month". Sent on every turn. */
+const allowance = (e: Entitlement) => ({
+	plan: e.plan,
+	used: e.used,
+	limit: e.limit,
+	resets_at: e.resets_at,
+});
 
 async function readJson<T extends z.ZodTypeAny>(
 	request: Request,
@@ -68,10 +89,15 @@ const ChatRequest = z.object({
 });
 
 // GET /models
-app.get('/models', (c) => {
-	const models = availableModels(c.env);
+app.get('/models', async (c) => {
+	const entitlement = await entitlementFor(c.env.DB, userId(c), role(c));
+	const models = availableModels(c.env, rosterFor(entitlement));
 	const fallback = models.find((m) => m.id === DEFAULT_MODEL_ID) ?? models[0];
-	return c.json({ models, default_model_id: fallback?.id ?? null });
+	return c.json({
+		models,
+		default_model_id: fallback?.id ?? null,
+		allowance: allowance(entitlement),
+	});
 });
 
 // GET /conversations?before=&limit=
@@ -88,8 +114,9 @@ app.post('/conversations', async (c) => {
 	const body = await readJson(c.req.raw, ConversationInput);
 	if ('error' in body) return c.json({ error: body.error }, 400);
 
+	const entitlement = await entitlementFor(c.env.DB, userId(c), role(c));
 	const modelId = body.data.model_id ?? DEFAULT_MODEL_ID;
-	if (!findModel(c.env, modelId)) {
+	if (!findModel(c.env, modelId, rosterFor(entitlement))) {
 		return c.json({ error: `Model ${modelId} is not available` }, 400);
 	}
 	const conversation = await createConversation(c.env.DB, userId(c), {
@@ -105,14 +132,21 @@ app.get('/conversations/:id', async (c) => {
 	const conversation = await getConversation(c.env.DB, userId(c), id);
 	if (!conversation) return c.json({ error: 'Conversation not found' }, 404);
 	const messages = await listMessages(c.env.DB, userId(c), id);
-	return c.json({ conversation, messages });
+	return c.json({
+		conversation,
+		messages: role(c) === 'admin' ? messages : redactToolOutputs(messages),
+	});
 });
 
 // PATCH /conversations/:id
 app.patch('/conversations/:id', async (c) => {
 	const body = await readJson(c.req.raw, ConversationPatch);
 	if ('error' in body) return c.json({ error: body.error }, 400);
-	if (body.data.model_id && !findModel(c.env, body.data.model_id)) {
+	const patchEntitlement = await entitlementFor(c.env.DB, userId(c), role(c));
+	if (
+		body.data.model_id &&
+		!findModel(c.env, body.data.model_id, rosterFor(patchEntitlement))
+	) {
 		return c.json(
 			{ error: `Model ${body.data.model_id} is not available` },
 			400
@@ -150,8 +184,20 @@ app.post('/conversations/:id/chat', async (c) => {
 	const conversation = await getConversation(c.env.DB, userId(c), id);
 	if (!conversation) return c.json({ error: 'Conversation not found' }, 404);
 
+	const entitlement = await entitlementFor(c.env.DB, userId(c), role(c));
+	if (!hasTurnsLeft(entitlement)) {
+		return c.json(
+			{
+				error: `You have used all ${entitlement.limit} of this month's turns.`,
+				code: 'TURN_LIMIT_REACHED',
+				allowance: allowance(entitlement),
+			},
+			402
+		);
+	}
+
 	const modelId = body.data.model_id ?? conversation.model_id;
-	const model = findModel(c.env, modelId);
+	const model = findModel(c.env, modelId, rosterFor(entitlement));
 	if (!model)
 		return c.json({ error: `Model ${modelId} is not available` }, 400);
 	if (modelId !== conversation.model_id) {
@@ -177,6 +223,11 @@ app.post('/conversations/:id/chat', async (c) => {
 		model,
 		languageModel: languageModel(c.env, model),
 		titleModel: titleModel(c.env, model),
+		// The admin reads the library directly; everyone else gets an answer
+		// about it. Applied to the stream as well as to a reload, because a
+		// reader with a network tab sees the stream.
+		redactToolOutput: role(c) !== 'admin',
+		allowance: allowance(entitlement),
 		waitUntil: (promise) => c.executionCtx.waitUntil(promise),
 	});
 });
