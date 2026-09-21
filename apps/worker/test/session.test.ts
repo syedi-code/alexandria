@@ -12,7 +12,12 @@ interface SessionBody {
 	contract: ApiContract;
 }
 interface MeBody {
-	user: { id: string; email: string; role: 'admin' | 'member' };
+	user: {
+		id: string;
+		email: string;
+		role: 'admin' | 'member';
+		plan: 'free' | 'paid';
+	};
 	contract: ApiContract;
 }
 interface ErrorBody {
@@ -136,6 +141,34 @@ describe('GET /me', () => {
 		expect(body.contract).toEqual(
 			JSON.parse(JSON.stringify(apiContract()))
 		);
+	});
+
+	it('says which plan the reader is on', async () => {
+		const body = await json<MeBody>(
+			await as(signIn(MEMBER, 'member'), '/me')
+		);
+		expect(body.user.plan).toBe('free');
+	});
+});
+
+describe('DELETE /session', () => {
+	it('ends the session, so the next Access login is not answered as this one', async () => {
+		const cookie = signIn(MEMBER, 'member');
+
+		const response = await as(cookie, '/session', { method: 'DELETE' });
+		expect(response.status).toBe(204);
+		expect(response.headers.get('set-cookie')).toMatch(
+			/__session=;.*Max-Age=0/
+		);
+		expect(
+			db.raw.prepare(`SELECT COUNT(*) AS n FROM sessions`).get()
+		).toEqual({ n: 0 });
+		expect((await as(cookie, '/me')).status).toBe(401);
+	});
+
+	it('succeeds for a reader who holds no session at all', async () => {
+		const response = await call('/session', { method: 'DELETE' });
+		expect(response.status).toBe(204);
 	});
 });
 
