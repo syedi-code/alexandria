@@ -156,6 +156,17 @@ every event with Stripe's own helper and verify it with the real
 `constructEventAsync`. `npm run stripe:setup` makes the product, price, portal
 and endpoint.
 
+**Some secrets name one environment and must never be synced.** `POLICY_AUD` is
+the audience of the Cloudflare Access application in front of _that_ deployment,
+and the developer's `.env` held the staging one while production's secret held
+production's. `npm run sync:secrets` pushes every `.env` variable to
+**production**, so one run would have pointed production at staging and made
+every sign-in fail with `JWT_VERIFICATION_FAILED`. `PER_ENVIRONMENT` in
+`cli/setup/sync-secrets.ts` now refuses those, and `CLOUDFLARE_API_TOKEN` is
+blacklisted: a worker secret is readable by every route in the worker, and that
+token can rewrite the Access policies in front of it. `POLICY_AUD` takes a
+comma-separated list, one audience per `/login/<idp>` app plus the gate's.
+
 **`LOCAL_DEV` cannot be checked at runtime, so it is checked at deploy time.**
 It skips Access and grants an admin context. Nothing in a request tells a local
 process from a deployed one — `wrangler dev` fills in `request.cf` with real
