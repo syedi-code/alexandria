@@ -75,6 +75,14 @@ export const MODELS: readonly ModelEntry[] = [
  */
 export const DEFAULT_MODEL_ID = 'gpt-5.6-luna';
 
+/**
+ * What a new conversation runs on, by roster. Paid readers are paying for the
+ * better answer, so they start on it; everyone else, the admin included,
+ * starts on Luna.
+ */
+export const defaultModelIdFor = (plan: UserPlan | 'unlimited') =>
+	plan === 'paid' ? 'claude-sonnet-5' : DEFAULT_MODEL_ID;
+
 /** Small, cheap models for naming conversations, one per provider. */
 const TITLE_MODEL_IDS: Record<Provider, string> = {
 	anthropic: 'claude-haiku-4-5-20251001',

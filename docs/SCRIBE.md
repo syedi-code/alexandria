@@ -176,7 +176,9 @@ All routes are under `/api` and need a session, except `/api/mcp`.
 | DELETE | `/conversations/:id`             | soft delete                                                                 |
 | POST   | `/conversations/:id/chat`        | `{ message: { role: 'user', parts: [{ type: 'text', text }] }, model_id? }` |
 | GET    | `/documents/:id`                 | a citation's target: work, pagination, `file_key` for `/files/sign`         |
-| GET    | `/documents/:id/pages?from=&to=` | extracted text, at most five pages                                          |
+| GET    | `/documents/:id/pages?from=&to=` | extracted text, at most five pages — the admin's alone                      |
+| GET    | `/cited/:document_id/pages?from=&to=` | the same, for pages within one of a page the reader's citations name   |
+| GET    | `/cited/:document_id/pages/:page_no/scan` | one page of the scan, on Paid, for the same pages                  |
 | ALL    | `/mcp`                           | MCP over Streamable HTTP, stateless                                         |
 
 **What a reader should be shown.** An answer message holds the text of every

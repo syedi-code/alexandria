@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, AuthContext } from '@alexandria/core/platform';
 import { getDocumentDetail, readPages } from '@alexandria/core/works';
-import { requireAuth } from '../auth.js';
+import { adminOnlyMiddleware, requireAuth } from '../auth.js';
 
 const app = new Hono<{
 	Bindings: Env;
@@ -15,8 +15,10 @@ app.get('/documents/:id', requireAuth(), async (c) => {
 	return c.json({ document });
 });
 
-// GET /documents/:id/pages?from=&to= — extracted text, at most five pages
-app.get('/documents/:id/pages', requireAuth(), async (c) => {
+// GET /documents/:id/pages?from=&to= — extracted text, at most five pages.
+// Any page on request is the admin's; a reader reads the pages their own
+// citations point at, through `/cited/:document_id/pages`.
+app.get('/documents/:id/pages', requireAuth(), adminOnlyMiddleware(), async (c) => {
 	const from = Number(c.req.query('from'));
 	const to =
 		c.req.query('to') === undefined ? undefined : Number(c.req.query('to'));

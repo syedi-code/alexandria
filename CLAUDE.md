@@ -126,6 +126,14 @@ bucket to anyone. Verification lives in `platform/file-tokens.ts`; the route
 tests assert the bucket is not even read when a signature is wrong. Never loosen
 that path without a test that fails first.
 
+**A reader never gets the library, only the pages they were cited.** The
+whole file (`/files/sign`, `/files/*` on a session) and any page of text on
+request (`/documents/:id/pages`) are the admin's. Readers go through
+`/cited/...`, which serves a page only within one page of a citation in their
+own conversations (`isCitedForReader`), and the scan only on Paid. A route
+that serves "any page, one at a time" serves the whole book to a loop; tie
+every new page-serving route to a citation, and test the refusal.
+
 **`LOCAL_DEV` cannot be checked at runtime, so it is checked at deploy time.**
 It skips Access and grants an admin context. Nothing in a request tells a local
 process from a deployed one — `wrangler dev` fills in `request.cf` with real
