@@ -51,6 +51,7 @@ const rosterFor = (e: Entitlement) => (e.limit === null ? 'unlimited' : e.plan);
 /** What the client shows as "17 of 20 this month". Sent on every turn. */
 const allowance = (e: Entitlement) => ({
 	plan: e.plan,
+	guest: e.guest,
 	used: e.used,
 	limit: e.limit,
 	resets_at: e.resets_at,
@@ -190,6 +191,16 @@ app.post('/conversations/:id/chat', async (c) => {
 	if (!conversation) return c.json({ error: 'Conversation not found' }, 404);
 
 	const entitlement = await entitlementFor(c.env.DB, userId(c), role(c));
+	if (!hasTurnsLeft(entitlement) && entitlement.guest) {
+		return c.json(
+			{
+				error: `Sign in to ask more than ${entitlement.limit} questions.`,
+				code: 'SIGN_IN_REQUIRED',
+				allowance: allowance(entitlement),
+			},
+			402
+		);
+	}
 	if (!hasTurnsLeft(entitlement)) {
 		return c.json(
 			{

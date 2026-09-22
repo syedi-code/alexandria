@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env, AuthContext } from '@alexandria/core';
-import { sessionMiddleware } from './auth.js';
+import { guestBoundary, sessionMiddleware } from './auth.js';
 import { sessionRoutes, identityRoutes } from './platform/session.js';
 import fileRoutes from './platform/files.js';
 import auditRoutes from './platform/audit.js';
@@ -37,6 +37,7 @@ app.route('/', mcpRoutes);
 app.route('/', publicRoutes);
 
 app.use('*', sessionMiddleware());
+app.use('*', guestBoundary());
 
 app.route('/', identityRoutes);
 

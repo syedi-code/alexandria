@@ -169,6 +169,11 @@ All routes are under `/api` and need a session, except `/api/mcp`.
 | Method | Path                                      |                                                                             |
 | ------ | ----------------------------------------- | --------------------------------------------------------------------------- |
 | GET    | `/models`                                 | the models with keys set, and the default                                   |
+| POST   | `/session/guest`                          | a visitor's session, past Turnstile (`{ turnstile_token }`); scribe#38      |
+| GET    | `/billing`                                | the plan, and when the subscription renews or ends                          |
+| POST   | `/billing/checkout`                       | a Stripe Checkout URL for Paid                                              |
+| POST   | `/billing/portal`                         | a Stripe billing portal URL                                                 |
+| POST   | `/billing/webhook`                        | Stripe's events; signature-verified, no session                             |
 | GET    | `/conversations?before=&limit=`           | the caller's conversations, most recent first                               |
 | POST   | `/conversations`                          | `{ title?, model_id? }`                                                     |
 | GET    | `/conversations/:id`                      | `{ conversation, messages }` — messages are AI SDK UI messages              |
