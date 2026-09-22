@@ -18,23 +18,30 @@ app.get('/documents/:id', requireAuth(), async (c) => {
 // GET /documents/:id/pages?from=&to= — extracted text, at most five pages.
 // Any page on request is the admin's; a reader reads the pages their own
 // citations point at, through `/cited/:document_id/pages`.
-app.get('/documents/:id/pages', requireAuth(), adminOnlyMiddleware(), async (c) => {
-	const from = Number(c.req.query('from'));
-	const to =
-		c.req.query('to') === undefined ? undefined : Number(c.req.query('to'));
-	if (
-		!Number.isInteger(from) ||
-		from < 1 ||
-		(to !== undefined && !Number.isInteger(to))
-	) {
-		return c.json({ error: 'from and to must be page numbers' }, 400);
+app.get(
+	'/documents/:id/pages',
+	requireAuth(),
+	adminOnlyMiddleware(),
+	async (c) => {
+		const from = Number(c.req.query('from'));
+		const to =
+			c.req.query('to') === undefined
+				? undefined
+				: Number(c.req.query('to'));
+		if (
+			!Number.isInteger(from) ||
+			from < 1 ||
+			(to !== undefined && !Number.isInteger(to))
+		) {
+			return c.json({ error: 'from and to must be page numbers' }, 400);
+		}
+		const pages = await readPages(c.env.DB, {
+			document_id: c.req.param('id'),
+			from,
+			to,
+		});
+		return c.json({ pages });
 	}
-	const pages = await readPages(c.env.DB, {
-		document_id: c.req.param('id'),
-		from,
-		to,
-	});
-	return c.json({ pages });
-});
+);
 
 export default app;
