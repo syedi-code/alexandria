@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AuthContext, Env, UserPlan } from '@alexandria/core/platform';
 import { PAGE_SCANS, TURNS_PER_MONTH } from '@alexandria/core/platform';
 import { requireAuth } from '../auth.js';
+import { isBillingOpen, priceOnSale, type Price } from '../billing/stripe.js';
 import { availableModels } from './models.js';
 
 /**
@@ -19,7 +20,7 @@ export interface PlanOffer {
 	models: { id: string; label: string; provider: string }[];
 	/** Whether the scan of a cited page can be opened, one page at a time. */
 	page_scans: boolean;
-	/** Null until there is a price to show; Stripe will own it. */
+	/** Null until Stripe has a price on sale; never a figure typed here. */
 	price: { amount_cents: number; currency: string; interval: 'month' } | null;
 }
 
@@ -29,9 +30,8 @@ const app = new Hono<{
 }>();
 
 app.use('/plans', requireAuth());
-app.use('/billing/*', requireAuth());
 
-const offer = (env: Env, id: UserPlan): PlanOffer => ({
+const offer = (env: Env, id: UserPlan, price: Price | null): PlanOffer => ({
 	id,
 	turns_per_month: TURNS_PER_MONTH[id],
 	models: availableModels(env, id).map(({ id, label, provider }) => ({
@@ -40,25 +40,36 @@ const offer = (env: Env, id: UserPlan): PlanOffer => ({
 		provider,
 	})),
 	page_scans: PAGE_SCANS[id],
-	price: null,
+	price:
+		id === 'paid' && price
+			? {
+					amount_cents: price.amount_cents,
+					currency: price.currency,
+					interval: price.interval,
+				}
+			: null,
 });
 
-// GET /plans
-app.get('/plans', (c) =>
-	c.json({ plans: [offer(c.env, 'free'), offer(c.env, 'paid')] })
-);
+/**
+ * The price on sale, or null. A plans page that cannot reach Stripe still
+ * opens and says the price is to come, rather than failing whole.
+ */
+async function currentPrice(env: Env): Promise<Price | null> {
+	if (!isBillingOpen(env)) return null;
+	try {
+		return await priceOnSale(env);
+	} catch (error) {
+		console.error('[billing] the price could not be read', error);
+		return null;
+	}
+}
 
-// POST /billing/checkout — where a Stripe Checkout session will be minted and
-// its URL returned. Until then it says so in a shape the client already acts
-// on, so the client's half of checkout is finished and waits only on this.
-app.post('/billing/checkout', (c) =>
-	c.json(
-		{
-			error: 'Paid plans are not open yet.',
-			code: 'CHECKOUT_NOT_OPEN',
-		},
-		501
-	)
-);
+// GET /plans
+app.get('/plans', async (c) => {
+	const price = await currentPrice(c.env);
+	return c.json({
+		plans: [offer(c.env, 'free', price), offer(c.env, 'paid', price)],
+	});
+});
 
 export default app;

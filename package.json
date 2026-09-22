@@ -25,6 +25,7 @@
 		"db:compare:local-staging": "npm run db:compare:local-staging -w @alexandria/cli",
 		"db:compare:staging-prod": "npm run db:compare:staging-prod -w @alexandria/cli",
 		"sql:local": "npm run sql:local -w @alexandria/cli --",
+		"stripe:setup": "npm run stripe:setup -w @alexandria/cli --",
 		"sql:staging": "npm run sql:staging -w @alexandria/cli --",
 		"sql:production": "npm run sql:production -w @alexandria/cli --",
 		"migrate:events": "npm run migrate:events -w @alexandria/cli --",
