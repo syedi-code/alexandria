@@ -2,9 +2,13 @@ import { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Env, AuthContext } from '@alexandria/core';
 import {
+	adoptGuest,
+	admitGuestFrom,
+	createGuest,
 	createSession,
 	deleteSession,
 	getSessionByToken,
+	hashAddress,
 	upsertUser,
 	getUserById,
 	sessionDurationHours,
@@ -16,6 +20,7 @@ import {
 	localDevIdentity,
 	verifyJwtAndGetIdentity,
 } from '../auth.js';
+import { passedTurnstile } from './turnstile.js';
 
 /**
  * Two routers, not one: POST /session must be mounted before the session
@@ -40,20 +45,25 @@ sessionRoutes.post('/session', async (c) => {
 		return c.json({ error: 'Database not configured' }, 500);
 	}
 
-	// If the user already has a valid session cookie, return it
+	// A live session is answered as it is — unless it is a guest's and the
+	// visitor has just signed in, in which case the guest is carried into the
+	// account below rather than answered as a guest again.
+	const jwtToken = c.req.header('cf-access-jwt-assertion');
 	const existingToken = getCookie(c, '__session');
-	if (existingToken) {
-		const existing = await getSessionByToken(db, existingToken);
-		if (existing) {
-			return c.json(
-				{
-					user: { id: existing.user_id, email: existing.email },
-					role: existing.role,
-					contract: apiContract(),
-				},
-				200
-			);
-		}
+	const existing = existingToken
+		? await getSessionByToken(db, existingToken)
+		: null;
+	const guest = existing?.is_guest === 1 ? existing : null;
+	if (existing && !(guest && jwtToken)) {
+		return c.json(
+			{
+				user: { id: existing.user_id, email: existing.email },
+				role: existing.role,
+				guest: existing.is_guest === 1,
+				contract: apiContract(),
+			},
+			200
+		);
 	}
 
 	// Local dev: stand in for Access, which is not in front of a local process.
@@ -63,7 +73,6 @@ sessionRoutes.post('/session', async (c) => {
 	}
 
 	// Verify CF Access JWT (one-time)
-	const jwtToken = c.req.header('cf-access-jwt-assertion');
 	if (!jwtToken) {
 		return c.json(
 			{
@@ -87,6 +96,16 @@ sessionRoutes.post('/session', async (c) => {
 
 		// Populate welcome data for first-time users
 		await populateWelcomeData(db, sub);
+
+		// The questions a guest asked, and their conversations, are the
+		// reader's now. The guest's session goes with the guest.
+		if (guest) {
+			try {
+				await adoptGuest(db, guest.user_id, sub);
+			} catch (error) {
+				console.error('[Session] adopting the guest failed:', error);
+			}
+		}
 
 		// Create session
 		const durationHours = sessionDurationHours(
@@ -112,6 +131,7 @@ sessionRoutes.post('/session', async (c) => {
 			{
 				user: { id: sub, email },
 				role,
+				guest: false,
 				contract: apiContract(),
 			},
 			201
@@ -126,6 +146,90 @@ sessionRoutes.post('/session', async (c) => {
 			401
 		);
 	}
+});
+
+// POST /api/session/guest — a visitor, before signing in (scribe#38).
+// Registered before the session middleware, like POST /session. Off until
+// TURNSTILE_SECRET is set. A guest costs money with every question, so one
+// is made only for a Turnstile token Cloudflare vouches for, and only a few
+// a day for any one address.
+sessionRoutes.post('/session/guest', async (c) => {
+	const db = c.env.DB;
+	const secret = c.env.TURNSTILE_SECRET;
+	if (!secret) {
+		return c.json(
+			{ error: 'Visitors cannot ask yet.', code: 'GUESTS_NOT_OPEN' },
+			501
+		);
+	}
+
+	// Whoever already holds a session keeps it: this never mints a second.
+	const held = getCookie(c, '__session');
+	const existing = held ? await getSessionByToken(db, held) : null;
+	if (existing) {
+		return c.json({
+			user: { id: existing.user_id, email: existing.email },
+			role: existing.role,
+			guest: existing.is_guest === 1,
+			contract: apiContract(),
+		});
+	}
+
+	let body: { turnstile_token?: unknown };
+	try {
+		body = await c.req.json();
+	} catch {
+		body = {};
+	}
+	const address = c.req.header('cf-connecting-ip');
+	const token =
+		typeof body.turnstile_token === 'string' ? body.turnstile_token : '';
+	if (!(await passedTurnstile(secret, token, address))) {
+		return c.json(
+			{ error: 'The check did not pass.', code: 'TURNSTILE_FAILED' },
+			403
+		);
+	}
+
+	// No address means no cap to hold it to, so no guest: everything that
+	// reaches the deployed worker through Cloudflare carries one.
+	if (
+		!address ||
+		!(await admitGuestFrom(db, await hashAddress(address, secret)))
+	) {
+		return c.json(
+			{
+				error: 'Too many visitors from here today. Sign in to ask.',
+				code: 'GUEST_LIMIT_REACHED',
+			},
+			429
+		);
+	}
+
+	const { id, email } = await createGuest(db);
+	const durationHours = sessionDurationHours(c.env.SESSION_DURATION_HOURS);
+	const session = await createSession(db, {
+		userId: id,
+		email,
+		role: 'member',
+		durationHours,
+	});
+	setCookie(c, '__session', session.token, {
+		path: '/api',
+		httpOnly: true,
+		secure: !isLocalDev(c),
+		sameSite: 'Lax',
+		maxAge: durationHours * 60 * 60,
+	});
+	return c.json(
+		{
+			user: { id, email },
+			role: 'member',
+			guest: true,
+			contract: apiContract(),
+		},
+		201
+	);
 });
 
 // DELETE /api/session — sign out.
@@ -167,6 +271,7 @@ identityRoutes.get('/me', async (c) => {
 			idp_type: userRecord?.idp_type ?? null,
 			role: authContext.role,
 			plan: userRecord?.plan ?? 'free',
+			guest: authContext.guest === true,
 		},
 		contract: apiContract(),
 	});

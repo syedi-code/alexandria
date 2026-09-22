@@ -1,5 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 import { TURNS_PER_MONTH } from './limits.js';
+import { GUEST_TURNS } from './guests.js';
 import type { SqlStatement } from './sql.js';
 import type { UserPlan } from './schema.js';
 import type { UserRole } from './types.js';
@@ -93,11 +94,14 @@ export function monthResetsAt(at: string | Date = new Date()): string {
 
 export interface Entitlement {
 	plan: UserPlan;
-	/** Turns taken this month. */
+	/** A visitor who has not signed in: `used` and `limit` are for ever, not a month. */
+	guest: boolean;
+	/** Turns taken this month, or ever for a guest. */
 	used: number;
 	/** null when unlimited, which is the admin and nobody else. */
 	limit: number | null;
-	resets_at: string;
+	/** null for a guest, whose questions never come back. */
+	resets_at: string | null;
 }
 
 export const hasTurnsLeft = (e: Entitlement): boolean =>
@@ -122,22 +126,29 @@ export async function entitlementFor(
 ): Promise<Entitlement> {
 	const row = await db
 		.prepare(
-			`SELECT u.plan AS plan,
+			`SELECT u.plan AS plan, u.is_guest AS is_guest,
 			        (SELECT COUNT(*) FROM usage_events e
 			          WHERE e.user_id = u.id
-			            AND e.billing_month = ?
+			            AND (u.is_guest = 1 OR e.billing_month = ?)
 			            AND e.kind = 'chat_turn') AS used
 			   FROM users u
 			  WHERE u.id = ?`
 		)
 		.bind(billingMonth(at), userId)
-		.first<{ plan: UserPlan; used: number }>();
+		.first<{ plan: UserPlan; is_guest: number; used: number }>();
 
 	const plan = row?.plan ?? 'free';
+	const guest = row?.is_guest === 1;
 	return {
-		plan,
+		plan: guest ? 'free' : plan,
+		guest,
 		used: row?.used ?? 0,
-		limit: role === 'admin' ? null : TURNS_PER_MONTH[plan],
-		resets_at: monthResetsAt(at),
+		limit:
+			role === 'admin'
+				? null
+				: guest
+					? GUEST_TURNS
+					: TURNS_PER_MONTH[plan],
+		resets_at: guest ? null : monthResetsAt(at),
 	};
 }

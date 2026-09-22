@@ -118,9 +118,11 @@ export type ScribeMessage = UIMessage<
 /** What is left of this month, echoed back so the client can show a counter. */
 export interface Allowance {
 	plan: 'free' | 'paid';
+	/** A visitor: three questions for ever, and none back until they sign in. */
+	guest: boolean;
 	used: number;
 	limit: number | null;
-	resets_at: string;
+	resets_at: string | null;
 }
 
 export interface Turn {

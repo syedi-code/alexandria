@@ -59,6 +59,13 @@ export interface Env {
 	STRIPE_AUTOMATIC_TAX?: string;
 	/** Where Stripe sends a reader back to; defaults to scribe's production origin. */
 	SCRIBE_ORIGIN?: string;
+	/**
+	 * Cloudflare Turnstile's secret. Guests (three questions before signing
+	 * in) are made only once it is set; until then POST /session/guest
+	 * answers 501 GUESTS_NOT_OPEN. Also keys the HMAC the per-address cap
+	 * stores in place of an address.
+	 */
+	TURNSTILE_SECRET?: string;
 }
 
 // ============================================================================
@@ -70,6 +77,8 @@ export type UserRole = 'admin' | 'member';
 export interface AuthContext {
 	user: { id: string; email: string };
 	role: UserRole;
+	/** A visitor who has not signed in; see platform/guests.ts. */
+	guest?: boolean;
 }
 
 export type AuthErrorCode =
