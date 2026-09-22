@@ -343,16 +343,20 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 				tools,
 				stopWhen: isStepCount(MAX_STEPS),
 				abortSignal: AbortSignal.timeout(TURN_TIMEOUT_MS),
-				prepareStep: ({ stepNumber }) =>
-					stepNumber < MAX_STEPS - 1
+				// The breakpoint was written once and never passed here, and every
+				// Anthropic step re-sent the whole turn at full price.
+				prepareStep: ({ stepNumber, messages }) => ({
+					messages: withCacheBreakpoint(messages),
+					...(stepNumber < MAX_STEPS - 1
 						? {}
 						: {
-								toolChoice: 'none',
+								toolChoice: 'none' as const,
 								instructions: [
 									SCRIBE_INSTRUCTIONS,
 									LAST_STEP,
 								].join('\n\n'),
-							},
+							}),
+				}),
 			});
 
 			for await (const chunk of result.toUIMessageStream<ScribeMessage>({
