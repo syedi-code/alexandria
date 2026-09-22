@@ -6,6 +6,7 @@ import {
 	cleanupExpiredSessions,
 	EXPIRED_SESSION_RETENTION_DAYS,
 } from '@alexandria/core/platform';
+import { pruneConversations } from '@alexandria/core/conversations';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -61,11 +62,34 @@ export default {
 	// The daily cron in wrangler.toml. D1 has no TTL, and a cleanup fired from a
 	// request without waitUntil is cancelled when the response is sent, which is
 	// how 394 expired sessions accumulated.
+	//
+	// Each job runs whether or not the one before it failed: a session table
+	// that will not prune is no reason to keep conversations past the 30 days
+	// the privacy page promises.
 	async scheduled(_controller: ScheduledController, env: Env) {
-		const removed = await cleanupExpiredSessions(
-			env.DB,
-			EXPIRED_SESSION_RETENTION_DAYS
-		);
-		console.log(`[cron] removed ${removed} expired sessions`);
+		const jobs = [
+			[
+				'expired sessions',
+				() =>
+					cleanupExpiredSessions(
+						env.DB,
+						EXPIRED_SESSION_RETENTION_DAYS
+					),
+			],
+			[
+				'conversations past 30 days, or deleted',
+				() =>
+					pruneConversations(env.DB, {
+						spare: env.ADMIN_EMAIL ?? null,
+					}),
+			],
+		] as const;
+		for (const [what, job] of jobs) {
+			try {
+				console.log(`[cron] removed ${await job()} ${what}`);
+			} catch (error) {
+				console.error(`[cron] ${what} failed`, error);
+			}
+		}
 	},
 };
