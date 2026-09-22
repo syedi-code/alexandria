@@ -31,6 +31,14 @@ function argument(name: string): string | undefined {
 
 const PRODUCT_TAG = 'scribe_paid';
 const LOOKUP_KEY = 'scribe_paid_monthly';
+/**
+ * Artificial Intelligence as a Service — cloud based, personal use. Stripe
+ * needs a tax code on the product before it can watch how close sales are to
+ * a registration threshold in any state or country, which it does for free
+ * and without collecting anything. Nothing here charges tax: that waits for
+ * STRIPE_AUTOMATIC_TAX, and for a registration to exist.
+ */
+const TAX_CODE = 'txcd_10105001';
 const AMOUNT_CENTS = 2000;
 const CURRENCY = 'usd';
 const WEBHOOK_URL =
@@ -78,9 +86,21 @@ async function product(): Promise<Stripe.Product> {
 	const { data } = await stripe.products.search({
 		query: `metadata['tag']:'${PRODUCT_TAG}' AND active:'true'`,
 	});
-	if (data[0]) {
-		say('product', `${data[0].id} (kept)`);
-		return data[0];
+	const found = data[0];
+	if (found) {
+		const code =
+			typeof found.tax_code === 'string'
+				? found.tax_code
+				: found.tax_code?.id;
+		if (code === TAX_CODE) {
+			say('product', `${found.id} (kept)`);
+			return found;
+		}
+		const fixed = await stripe.products.update(found.id, {
+			tax_code: TAX_CODE,
+		});
+		say('product', `${fixed.id} (kept, tax code set)`);
+		return fixed;
 	}
 	const made = await stripe.products.create({
 		name: 'Scribe Paid',
@@ -88,6 +108,7 @@ async function product(): Promise<Stripe.Product> {
 			'150 questions a month, Claude Sonnet 5 by default, and the scanned page behind every quotation.',
 		metadata: { tag: PRODUCT_TAG },
 		statement_descriptor: 'SCRIBE',
+		tax_code: TAX_CODE,
 	});
 	say('product', `${made.id} (made)`);
 	return made;
