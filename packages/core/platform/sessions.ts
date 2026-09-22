@@ -80,7 +80,9 @@ export async function getSessionByToken(
 ): Promise<SessionRow | null> {
 	const result = await db
 		.prepare(
-			`SELECT * FROM sessions WHERE token = ? AND expires_at > datetime('now')`
+			`SELECT s.*, u.is_guest AS is_guest
+			   FROM sessions s LEFT JOIN users u ON u.id = s.user_id
+			  WHERE s.token = ? AND s.expires_at > datetime('now')`
 		)
 		.bind(token)
 		.first<SessionRow>();

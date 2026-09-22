@@ -3,6 +3,7 @@
 exports[`the API surface > is unchanged by the module split 1`] = `
 [
   "POST /session",
+  "POST /session/guest",
   "DELETE /session",
   "POST /billing/webhook",
   "GET /catalogue",

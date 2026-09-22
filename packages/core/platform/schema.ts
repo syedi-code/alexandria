@@ -34,6 +34,8 @@ export const SessionRow = z.object({
 	role: z.enum(['admin', 'member']),
 	created_at: z.string(),
 	expires_at: z.string(),
+	/** From the user, joined in by getSessionByToken: 1 for a guest. */
+	is_guest: z.number().optional(),
 });
 
 export type SessionRow = z.infer<typeof SessionRow>;

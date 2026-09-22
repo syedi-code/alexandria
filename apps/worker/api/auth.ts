@@ -38,11 +38,11 @@ let cachedTeamDomain: string | null = null;
 export async function verifyAccessJwt(
 	env: Env,
 	token: string,
-	audience: string | undefined
+	audience: string | string[] | undefined
 ): Promise<JWTPayload> {
 	const teamDomain = env.TEAM_DOMAIN;
 
-	if (!teamDomain || !audience) {
+	if (!teamDomain || !audience || audience.length === 0) {
 		throw new Error('SERVER_CONFIG_ERROR: TEAM_DOMAIN or audience missing');
 	}
 
@@ -62,6 +62,17 @@ export async function verifyAccessJwt(
 }
 
 /**
+ * The Access applications a sign-in may come through. One per way of signing
+ * in (`/login/github`, `/login/google`), each with its own audience tag, so
+ * `POLICY_AUD` holds them comma-separated; a single value still works.
+ */
+export const policyAudiences = (env: Env): string[] =>
+	(env.POLICY_AUD ?? '')
+		.split(',')
+		.map((aud) => aud.trim())
+		.filter(Boolean);
+
+/**
  * Verify a CF Access JWT and return the user identity.
  * Used only by the POST /api/session handler — no other route calls this.
  */
@@ -69,7 +80,7 @@ export async function verifyJwtAndGetIdentity(
 	env: Env,
 	token: string
 ): Promise<{ sub: string; email: string }> {
-	const payload = await verifyAccessJwt(env, token, env.POLICY_AUD);
+	const payload = await verifyAccessJwt(env, token, policyAudiences(env));
 
 	return {
 		sub: payload.sub as string,
@@ -175,9 +186,43 @@ export function sessionMiddleware(): MiddlewareHandler<AppEnv> {
 		c.set('authContext', {
 			user: { id: session.user_id, email: session.email },
 			role: session.role,
+			guest: session.is_guest === 1,
 		});
 
 		return next();
+	};
+}
+
+/**
+ * What a guest may reach: reading the catalogue, asking and reading their
+ * own conversations, and the pages those cite. An allow list, not a deny
+ * list, so a route added tomorrow is closed to guests until someone decides
+ * otherwise — writing, the library, files, uploads and billing all answer
+ * 403 `ACCOUNT_REQUIRED` without being named here.
+ */
+const GUEST_ROUTES: readonly [string, RegExp][] = [
+	['GET', /^\/me$/],
+	['GET', /^\/models$/],
+	['GET', /^\/plans$/],
+	['GET', /^\/catalogue$/],
+	['*', /^\/conversations(\/.*)?$/],
+	['GET', /^\/cited\/[^/]+\/pages$/],
+];
+
+export function guestBoundary(): MiddlewareHandler<AppEnv> {
+	return async (c, next) => {
+		if (!c.get('authContext')?.guest) return next();
+		const path = c.req.path.replace(/^\/api(?=\/)/, '');
+		const allowed = GUEST_ROUTES.some(
+			([method, pattern]) =>
+				(method === '*' || method === c.req.method) &&
+				pattern.test(path)
+		);
+		if (allowed) return next();
+		return c.json(
+			{ error: 'Sign in to do that.', code: 'ACCOUNT_REQUIRED' },
+			403
+		);
 	};
 }
 

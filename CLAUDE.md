@@ -134,6 +134,28 @@ serves a page only within one page of a citation in their own conversations
 one at a time" serves the whole book to a loop; tie every new page-serving route
 to a citation, and test the refusal.
 
+**A guest reaches an allow list, never a deny list.** A visitor may ask three
+questions before signing in (scribe#38): `POST /session/guest` makes a `users`
+row with `is_guest = 1` and an ordinary session, only past Turnstile and under a
+daily cap per address (stored as an HMAC, never the address). `guestBoundary()`
+then answers 403 `ACCOUNT_REQUIRED` to every route not in `GUEST_ROUTES` in
+`auth.ts`, so a route added later is closed to guests until someone opens it on
+purpose. A guest's questions count for ever, not a month. Signing in
+(`POST /session` with a guest cookie and a JWT) moves the guest's conversations
+and ledger rows to the account in one batch and deletes the guest; `adoptGuest`
+refuses anything that is not a guest. `POLICY_AUD` is a comma-separated list,
+one audience per `/login/<idp>` Access app. Off until `TURNSTILE_SECRET` is set.
+
+**Money goes through the webhook, and the webhook trusts only Stripe.**
+`api/billing/`. The signature is verified before anything is read; then each
+subscription is fetched from Stripe rather than read off the event, so order and
+duplicates cannot matter, and `users.plan` is recomputed from `subscriptions`
+rather than set. A customer is tied to one reader, once, and never moved. Tests
+fake Stripe's API (`billing/client.ts` is the only module they replace) but sign
+every event with Stripe's own helper and verify it with the real
+`constructEventAsync`. `npm run stripe:setup` makes the product, price, portal
+and endpoint.
+
 **`LOCAL_DEV` cannot be checked at runtime, so it is checked at deploy time.**
 It skips Access and grants an admin context. Nothing in a request tells a local
 process from a deployed one — `wrangler dev` fills in `request.cf` with real

@@ -5,6 +5,7 @@ import { Env } from '@alexandria/core';
 import {
 	cleanupExpiredSessions,
 	EXPIRED_SESSION_RETENTION_DAYS,
+	pruneGuests,
 } from '@alexandria/core/platform';
 import { pruneConversations } from '@alexandria/core/conversations';
 
@@ -76,6 +77,7 @@ export default {
 						EXPIRED_SESSION_RETENTION_DAYS
 					),
 			],
+			['guests unused for 30 days', () => pruneGuests(env.DB)],
 			[
 				'conversations past 30 days, or deleted',
 				() =>
