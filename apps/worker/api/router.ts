@@ -9,6 +9,7 @@ import worksRoutes from './works/index.js';
 import writingRoutes, { libraryRoutes } from './writing/index.js';
 import conversationRoutes from './conversations/index.js';
 import planRoutes from './conversations/plans.js';
+import citedRoutes from './conversations/cited.js';
 import mcpRoutes from './mcp/index.js';
 import publicRoutes from './public.js';
 
@@ -41,6 +42,7 @@ app.route('/', worksRoutes);
 app.route('/', writingRoutes);
 app.route('/', conversationRoutes);
 app.route('/', planRoutes);
+app.route('/', citedRoutes);
 
 app.route('/', fileRoutes);
 app.route('/', auditRoutes);

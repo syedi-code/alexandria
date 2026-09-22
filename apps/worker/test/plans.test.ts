@@ -97,6 +97,13 @@ describe('GET /plans', () => {
 		]);
 	});
 
+	it('opens the scan of a cited page on Paid alone', async () => {
+		const { plans } = (await (await call('/plans')).json()) as {
+			plans: PlanOffer[];
+		};
+		expect(plans.map((plan) => plan.page_scans)).toEqual([false, true]);
+	});
+
 	it('names no price until there is one', async () => {
 		const { plans } = (await (await call('/plans')).json()) as {
 			plans: PlanOffer[];
@@ -123,6 +130,25 @@ describe('GET /models', () => {
 			'claude-sonnet-5',
 			'claude-haiku-4-5-20251001',
 		]);
+	});
+
+	it('starts a paid reader on Sonnet and a free reader on Luna', async () => {
+		db.raw.prepare(`UPDATE users SET plan = 'paid' WHERE id = 'u1'`).run();
+		const paid = (await (await call('/models')).json()) as {
+			default_model_id: string;
+		};
+		expect(paid.default_model_id).toBe('claude-sonnet-5');
+
+		const created = (await (
+			await call('/conversations', { method: 'POST', body: '{}' })
+		).json()) as { conversation: { model_id: string } };
+		expect(created.conversation.model_id).toBe('claude-sonnet-5');
+
+		db.raw.prepare(`UPDATE users SET plan = 'free' WHERE id = 'u1'`).run();
+		const free = (await (await call('/models')).json()) as {
+			default_model_id: string;
+		};
+		expect(free.default_model_id).toBe('gpt-5.6-luna');
 	});
 
 	it('gives the admin Sol, and nobody else even hears of it', async () => {

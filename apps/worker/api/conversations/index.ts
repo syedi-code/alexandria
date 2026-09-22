@@ -21,7 +21,7 @@ import { requireAuth } from '../auth.js';
 import { streamTurn, type ScribeMessage } from './chat.js';
 import {
 	availableModels,
-	DEFAULT_MODEL_ID,
+	defaultModelIdFor,
 	findModel,
 	lockedModels,
 	languageModel,
@@ -92,8 +92,10 @@ const ChatRequest = z.object({
 // GET /models
 app.get('/models', async (c) => {
 	const entitlement = await entitlementFor(c.env.DB, userId(c), role(c));
-	const models = availableModels(c.env, rosterFor(entitlement));
-	const fallback = models.find((m) => m.id === DEFAULT_MODEL_ID) ?? models[0];
+	const roster = rosterFor(entitlement);
+	const models = availableModels(c.env, roster);
+	const fallback =
+		models.find((m) => m.id === defaultModelIdFor(roster)) ?? models[0];
 	return c.json({
 		models,
 		locked: lockedModels(c.env, rosterFor(entitlement)),
@@ -117,7 +119,8 @@ app.post('/conversations', async (c) => {
 	if ('error' in body) return c.json({ error: body.error }, 400);
 
 	const entitlement = await entitlementFor(c.env.DB, userId(c), role(c));
-	const modelId = body.data.model_id ?? DEFAULT_MODEL_ID;
+	const modelId =
+		body.data.model_id ?? defaultModelIdFor(rosterFor(entitlement));
 	if (!findModel(c.env, modelId, rosterFor(entitlement))) {
 		return c.json({ error: `Model ${modelId} is not available` }, 400);
 	}
