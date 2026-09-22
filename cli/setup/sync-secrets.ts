@@ -22,7 +22,21 @@ const BLACKLIST = [
 	'NEON_CONNECTION_STRING_SCRIPTS_ROLE',
 	// Cloudflare identifiers - not secrets
 	'CLOUDFLARE_ACCOUNT_ID',
+	// An account API token, used by tooling on the developer's machine to set
+	// up Access apps and Turnstile. The worker must never hold it: a worker
+	// secret is readable by every route in the worker, and this one can
+	// rewrite the Access policies in front of it.
+	'CLOUDFLARE_API_TOKEN',
 ];
+
+/**
+ * Variables that name an environment's own resources, and so must never be
+ * copied from a developer's `.env` onto production. `POLICY_AUD` held the
+ * staging Access app's audience here while production's secret held the
+ * production one; a sync would have pointed production at staging and made
+ * every sign-in fail with `JWT_VERIFICATION_FAILED`.
+ */
+const PER_ENVIRONMENT = ['POLICY_AUD', 'TEAM_DOMAIN'];
 
 const args = process.argv.slice(2);
 const isQuiet = args.includes('--quiet');
@@ -65,6 +79,14 @@ async function main() {
 	for (const key in envConfig) {
 		if (BLACKLIST.includes(key)) {
 			if (!isQuiet) console.log(`Skipping ${key} (blacklisted)`);
+			continue;
+		}
+
+		if (PER_ENVIRONMENT.includes(key)) {
+			console.log(
+				`Skipping ${key}: it names this environment's own Access app. ` +
+					`Set it per environment with \`wrangler secret put ${key}\`.`
+			);
 			continue;
 		}
 
