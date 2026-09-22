@@ -43,6 +43,22 @@ export interface Env {
 	MCP_POLICY_AUD?: string;
 	/** Client ID of the Access service token allowed to call /api/mcp */
 	MCP_SERVICE_TOKEN_ID?: string;
+	/**
+	 * Stripe. Without a secret key checkout answers 501 CHECKOUT_NOT_OPEN and
+	 * nothing else here is reached. A test key (sk_test_…) belongs in
+	 * .dev.vars and staging only; production holds the live one.
+	 */
+	STRIPE_SECRET_KEY?: string;
+	/** The signing secret of the webhook endpoint (whsec_…). */
+	STRIPE_WEBHOOK_SECRET?: string;
+	/** The Price sold, by lookup key; defaults to `scribe_paid_monthly`. */
+	STRIPE_PRICE_LOOKUP_KEY?: string;
+	/** A Billing Portal configuration (bpc_…); Stripe's default if unset. */
+	STRIPE_PORTAL_CONFIGURATION?: string;
+	/** "true" once Stripe Tax is set up in the dashboard. */
+	STRIPE_AUTOMATIC_TAX?: string;
+	/** Where Stripe sends a reader back to; defaults to scribe's production origin. */
+	SCRIBE_ORIGIN?: string;
 }
 
 // ============================================================================
