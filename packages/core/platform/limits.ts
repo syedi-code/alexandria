@@ -24,7 +24,9 @@ export const MAX_LENGTHS = {
  * not to be removed. The admin is exempt by role, not by plan.
  */
 export const TURNS_PER_MONTH = {
-	free: 20,
+	// Ten is a trial, not a tier: enough to ask a real question, read the
+	// pages it cites and judge the verification, and not enough to live on.
+	free: 10,
 	// Sized so a reader who asks every question of Sonnet 5 still costs less
 	// than the $20 they pay: about $0.06-0.12 a question at September 2026
 	// prices. Raise it once the ledger shows what paid readers really cost.
