@@ -34,6 +34,7 @@
 		"db:compare": "tsx db/db-compare.ts",
 		"db:compare:local-staging": "tsx db/db-compare.ts local staging",
 		"db:compare:staging-prod": "tsx db/db-compare.ts staging production",
+		"stripe:setup": "tsx stripe/setup.ts",
 		"sql:local": "tsx db/execute-sql.ts --env local",
 		"sql:staging": "tsx db/execute-sql.ts --env staging",
 		"sql:production": "tsx db/execute-sql.ts --env production",
@@ -60,6 +61,7 @@
 		"@alexandria/core": "*",
 		"dotenv": "^16.4.5",
 		"inquirer": "^12.0.0",
+		"stripe": "^22.6.2",
 		"tsx": "^4.20.4",
 		"unpdf": "^1.8.1"
 	}

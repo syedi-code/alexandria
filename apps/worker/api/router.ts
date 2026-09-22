@@ -10,6 +10,8 @@ import writingRoutes, { libraryRoutes } from './writing/index.js';
 import conversationRoutes from './conversations/index.js';
 import planRoutes from './conversations/plans.js';
 import citedRoutes from './conversations/cited.js';
+import billingRoutes from './billing/routes.js';
+import billingWebhook from './billing/webhook.js';
 import mcpRoutes from './mcp/index.js';
 import publicRoutes from './public.js';
 
@@ -23,6 +25,9 @@ const app = new Hono<{
 // session middleware is what lets it mint a session without already holding
 // one — order here is load-bearing, not stylistic.
 app.route('/', sessionRoutes);
+
+// Stripe carries a signature, not a session.
+app.route('/', billingWebhook);
 
 // MCP clients carry an Access service token, not a session.
 app.route('/', mcpRoutes);
@@ -43,6 +48,7 @@ app.route('/', writingRoutes);
 app.route('/', conversationRoutes);
 app.route('/', planRoutes);
 app.route('/', citedRoutes);
+app.route('/', billingRoutes);
 
 app.route('/', fileRoutes);
 app.route('/', auditRoutes);
