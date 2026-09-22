@@ -5,7 +5,7 @@ import {
 	InvalidObjectKeyError,
 	signFileToken,
 } from '@alexandria/core/platform';
-import { requireAuth } from '../auth.js';
+import { adminOnlyMiddleware, requireAuth } from '../auth.js';
 import { objectKeyFromPath } from './file-access.js';
 
 const app = new Hono<{
@@ -13,8 +13,10 @@ const app = new Hono<{
 	Variables: { authContext: AuthContext };
 }>();
 
-// POST /files/sign — mint a signed URL token for one object key
-app.post('/files/sign', requireAuth(), async (c) => {
+// POST /files/sign — mint a signed URL token for one object key. The admin's
+// alone: a token opens the whole file, and a reader is given the page a
+// citation points at (`/cited/...`), never the book.
+app.post('/files/sign', requireAuth(), adminOnlyMiddleware(), async (c) => {
 	const secret = c.env.FILE_SIGNING_SECRET;
 	if (!secret) {
 		return c.json({ error: 'File signing secret not configured' }, 500);
@@ -67,9 +69,9 @@ function rangeOf(header: string | undefined): R2Range | null {
 }
 
 /**
- * Serves one R2 object. Reached either with a session or with a signed token —
- * whichever it was, auth already happened in sessionMiddleware, so by here the
- * request is entitled to the object.
+ * Serves one R2 object. Reached either with a signed token or with the admin's
+ * session. Only the admin can mint a token, and a reader's session is refused
+ * here, because a session that opens any key opens the whole library.
  *
  * It answers byte ranges, and says so. A reader who wants page 147 of a
  * four-hundred-page scan should not be sent the other three hundred and
@@ -82,7 +84,14 @@ const handleFileRequest = async (c: {
 	env: Env;
 	req: { path: string; header(name: string): string | undefined };
 	json: (body: unknown, status?: number) => Response;
+	get(key: 'authContext'): AuthContext | undefined;
 }) => {
+	// A signed request carries no authContext; sessionMiddleware verified it.
+	const session = c.get('authContext');
+	if (session && session.role !== 'admin') {
+		return c.json({ error: 'Admin access required' }, 403);
+	}
+
 	const bucket = c.env.R2_BUCKET;
 	if (!bucket) {
 		return c.json({ error: 'R2 bucket not configured' }, 500);

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { AuthContext, Env, UserPlan } from '@alexandria/core/platform';
-import { TURNS_PER_MONTH } from '@alexandria/core/platform';
+import { PAGE_SCANS, TURNS_PER_MONTH } from '@alexandria/core/platform';
 import { requireAuth } from '../auth.js';
 import { availableModels } from './models.js';
 
@@ -17,6 +17,8 @@ export interface PlanOffer {
 	id: UserPlan;
 	turns_per_month: number;
 	models: { id: string; label: string; provider: string }[];
+	/** Whether the scan of a cited page can be opened, one page at a time. */
+	page_scans: boolean;
 	/** Null until there is a price to show; Stripe will own it. */
 	price: { amount_cents: number; currency: string; interval: 'month' } | null;
 }
@@ -37,6 +39,7 @@ const offer = (env: Env, id: UserPlan): PlanOffer => ({
 		label,
 		provider,
 	})),
+	page_scans: PAGE_SCANS[id],
 	price: null,
 });
 
