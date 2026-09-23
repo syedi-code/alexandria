@@ -201,9 +201,16 @@ grammar and scribe has to agree with it forever; `FOREIGN_SHAPES` is a table of
 foreign spellings in front of it, which the next shape can be added to without
 touching the grammar or the other repo.
 
-What is still missing is the other half: an answer carrying a `P`-handle that no
-citation claimed is an answer whose citation we failed to read, and it should
-fail the turn rather than reach a reader looking complete.
+The other half is `citationTrouble()`: an answer that names a `P`-handle no
+citation claimed, or that read pages and cites none of them, is an answer whose
+citations we cannot read. On 22 September Claude Sonnet 5 wrote one — quoted
+words unmarked in the prose, a bare `(P14)` after each — and no Claude answer
+before it had carried a single citation. A bare handle cannot be translated,
+because where its quotation starts is not written down, so `streamTurn` asks for
+the answer once more, in `<cite>`, naming what was wrong (`citeAgain()`). It
+streams as one more step; scribe shows the last step as the answer, and the
+draft is left out of verification. Once only: a second failure is logged as
+`[chat] citations rewritten` with `still` set, and reaches the reader as it is.
 
 **An instruction a model half-keeps is not a rule.** The instructions ask for
 the quoted words to be written once, inside the `<cite>`. Across production the

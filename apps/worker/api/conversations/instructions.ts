@@ -1,3 +1,4 @@
+import type { CitationTrouble } from '@alexandria/core/conversations';
 import { READING_PRACTICE } from '@alexandria/core/works';
 
 /**
@@ -17,6 +18,24 @@ Never put quotation marks around quoted words, and never quote outside a cite: t
 	'Markdown is rendered. Use a heading, a list or a quotation block only where the answer has that shape; prefer a paragraph.',
 	`Mark every person and work you name: <author>Newton</author>, <title>The Order of Things</title>. Every mention, held by the library or not. Nothing else — not a school, a century, a place or a concept. Never inside a <cite>, which would break its check.`,
 ].join('\n\n');
+
+/**
+ * Sent once, after an answer whose citations could not be read, to ask for the
+ * same answer in the grammar that can be checked. It names what was wrong,
+ * because a model asked only to "use cites" wrote the same bare handles again.
+ */
+export function citeAgain(trouble: CitationTrouble): string {
+	const wrong =
+		trouble.kind === 'unclaimed'
+			? `Your answer names ${trouble.handles.join(', ')} on ${trouble.handles.length === 1 ? 'its own' : 'their own'}, outside a cite, so none of those quotations can be checked.`
+			: 'Your answer draws on pages you read but quotes none of them in a cite, so nothing in it can be checked.';
+	return [
+		wrong,
+		'Write the same answer again, with every quotation wrapped in the handle of its page — <cite P7>the exact words on the page</cite> — five to twenty words, verbatim. Never write a handle on its own or in brackets. Only handles you were shown.',
+		'If the pages do not bear on the question after all, say so plainly instead.',
+		'Do not mention that this is a second draft.',
+	].join(' ');
+}
 
 export const TITLE_INSTRUCTIONS =
 	'Name this conversation from its first question, in at most six words. Reply with the title alone: no quotes, no full stop, no Markdown, no explanation, and nothing on a second line.';

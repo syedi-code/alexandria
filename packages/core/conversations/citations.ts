@@ -103,6 +103,63 @@ export function normaliseCitationShapes(text: string): string {
 }
 
 /**
+ * A citation we could not read.
+ *
+ * `FOREIGN_SHAPES` translates a notation that carries its quoted words. On 22
+ * September Claude Sonnet 5 wrote one that does not: the words in the prose,
+ * unmarked, and a bare `(P14)` after them. There is nothing to translate —
+ * where the quotation starts is not written down — so nothing was checked and
+ * the reader was shown a fully cited answer with no verdict on any of it.
+ * Every Claude answer before that one had carried no citation at all.
+ *
+ * So the question is asked the other way round: which handles does the answer
+ * name that no citation claimed? Any shape the next model invents lands here,
+ * without anyone having to have seen it first. Only handles the turn actually
+ * minted count, so a `P53` in the prose is left alone.
+ */
+const HANDLE = /\bP\d+\b/g;
+
+export function unclaimedHandles(
+	text: string,
+	isHandle: (handle: string) => boolean
+): string[] {
+	const prose = normaliseCitationShapes(text).replace(CITATION, ' ');
+	const named = [...prose.matchAll(HANDLE)].map(([handle]) => handle);
+	return [...new Set(named)].filter(isHandle);
+}
+
+/**
+ * What is wrong with an answer's citations, if anything is.
+ *
+ * `uncited` is an answer that read pages and quotes none of them in a cite.
+ * It is not necessarily wrong — the pages may not bear on the question — but
+ * it is what the first Claude answers looked like, prose woven from the pages
+ * with nothing a reader could check.
+ */
+export type CitationTrouble =
+	| { kind: 'unclaimed'; handles: string[] }
+	| { kind: 'uncited' };
+
+export function citationTrouble(
+	answer: string,
+	handles: PageHandles,
+	readPages: boolean
+): CitationTrouble | null {
+	const unclaimed = unclaimedHandles(
+		answer,
+		(handle) => handles.resolve(handle) !== undefined
+	);
+	if (unclaimed.length > 0) return { kind: 'unclaimed', handles: unclaimed };
+	if (
+		readPages &&
+		answer.trim() &&
+		parseCitations(normaliseCitationShapes(answer)).length === 0
+	)
+		return { kind: 'uncited' };
+	return null;
+}
+
+/**
  * A quotation the model wrote out twice.
  *
  * The instructions ask for the quoted words to be written once, inside the
