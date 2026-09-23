@@ -104,7 +104,11 @@ describe('the cache breakpoint on a turn', () => {
 	const reply: LanguageModelV4StreamPart[] = [
 		{ type: 'stream-start', warnings: [] },
 		{ type: 'text-start', id: 't' },
-		{ type: 'text-delta', id: 't', delta: 'Nietzsche warns.' },
+		{
+			type: 'text-delta',
+			id: 't',
+			delta: 'Nietzsche warns <cite P2>He who fights with monsters should be careful</cite>.',
+		},
 		{ type: 'text-end', id: 't' },
 		finish('stop'),
 	];
@@ -232,7 +236,12 @@ describe('what is sent to Anthropic', () => {
 					)
 				: anthropicStream(
 						[{ type: 'text', text: '' }],
-						[{ type: 'text_delta', text: 'Nietzsche warns.' }],
+						[
+							{
+								type: 'text_delta',
+								text: 'Nietzsche warns <cite P2>He who fights with monsters should be careful</cite>.',
+							},
+						],
 						'end_turn',
 						900
 					);

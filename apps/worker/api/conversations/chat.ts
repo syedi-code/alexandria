@@ -13,6 +13,7 @@ import {
 	type UIMessage,
 } from 'ai';
 import {
+	citationTrouble,
 	omitOldToolOutputs,
 	PageHandles,
 	redactLibraryText,
@@ -27,6 +28,7 @@ import {
 import type { WorksToolContext } from '@alexandria/core/works';
 import {
 	asTitle,
+	citeAgain,
 	SCRIBE_INSTRUCTIONS,
 	TITLE_INSTRUCTIONS,
 } from './instructions.js';
@@ -167,6 +169,42 @@ export function describeFailure(error: unknown): string {
 			return 'The model provider is unavailable right now. Try again shortly.';
 	}
 	return 'Scribe could not finish this answer.';
+}
+
+const readsPages = (step: { toolCalls: readonly { toolName: string }[] }) =>
+	step.toolCalls.some((call) =>
+		(PAGE_TOOLS as readonly string[]).includes(call.toolName)
+	);
+
+const plus = (a?: number, b?: number) =>
+	a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0);
+
+/** Two passes over one turn, billed as one. Only what is saved is summed. */
+function addUsage(
+	a: LanguageModelUsage,
+	b: LanguageModelUsage
+): LanguageModelUsage {
+	return {
+		...a,
+		inputTokens: plus(a.inputTokens, b.inputTokens),
+		outputTokens: plus(a.outputTokens, b.outputTokens),
+		totalTokens: plus(a.totalTokens, b.totalTokens),
+		inputTokenDetails: {
+			...a.inputTokenDetails,
+			noCacheTokens: plus(
+				a.inputTokenDetails?.noCacheTokens,
+				b.inputTokenDetails?.noCacheTokens
+			),
+			cacheReadTokens: plus(
+				a.inputTokenDetails?.cacheReadTokens,
+				b.inputTokenDetails?.cacheReadTokens
+			),
+			cacheWriteTokens: plus(
+				a.inputTokenDetails?.cacheWriteTokens,
+				b.inputTokenDetails?.cacheWriteTokens
+			),
+		},
+	};
 }
 
 /** A message with nothing but step boundaries in it: the model failed before saying anything. */
@@ -336,13 +374,20 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 		originalMessages: messages,
 		generateId: () => crypto.randomUUID(),
 		execute: async ({ writer }) => {
+			const abortSignal = AbortSignal.timeout(TURN_TIMEOUT_MS);
+			const onError = (error: unknown) => {
+				failed = true;
+				console.error('[chat] model failed:', error);
+				return describeFailure(error);
+			};
+
 			const result = streamText({
 				model: turn.languageModel,
 				instructions: SCRIBE_INSTRUCTIONS,
 				messages: modelMessages,
 				tools,
 				stopWhen: isStepCount(MAX_STEPS),
-				abortSignal: AbortSignal.timeout(TURN_TIMEOUT_MS),
+				abortSignal,
 				// The breakpoint was written once and never passed here, and every
 				// Anthropic step re-sent the whole turn at full price.
 				prepareStep: ({ stepNumber, messages }) => ({
@@ -361,31 +406,79 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 
 			for await (const chunk of result.toUIMessageStream<ScribeMessage>({
 				sendFinish: false,
-				onError: (error) => {
-					failed = true;
-					console.error('[chat] model failed:', error);
-					return describeFailure(error);
-				},
+				onError,
 			})) {
 				writer.write(chunk);
 			}
 			// The error is already in the stream; awaiting results would raise it again.
 			if (failed) return;
 
-			const steps = await result.steps;
+			let steps = await result.steps;
+			usage = await result.totalUsage;
+			let finishReason = await result.finishReason;
+
+			// An answer whose citations cannot be read is written once more,
+			// in the grammar that can be checked. Translating it was not
+			// possible: a bare `(P14)` does not say where its quotation starts.
+			// It streams as a step of its own, and the reader is shown the last
+			// step as the answer, so the first draft becomes working.
+			const trouble = citationTrouble(
+				steps.at(-1)?.text ?? '',
+				handles,
+				steps.some(readsPages)
+			);
+			if (trouble) {
+				const again = streamText({
+					model: turn.languageModel,
+					instructions: SCRIBE_INSTRUCTIONS,
+					messages: withCacheBreakpoint([
+						...modelMessages,
+						...(await result.response).messages,
+						{ role: 'user', content: citeAgain(trouble) },
+					]),
+					tools,
+					toolChoice: 'none',
+					abortSignal,
+				});
+				for await (const chunk of again.toUIMessageStream<ScribeMessage>(
+					{
+						sendStart: false,
+						sendFinish: false,
+						onError,
+					}
+				)) {
+					writer.write(chunk);
+				}
+				if (failed) return;
+
+				// The draft is not checked: its quotations are written again below it.
+				steps = [...steps.slice(0, -1), ...(await again.steps)];
+				usage = addUsage(usage, await again.totalUsage);
+				finishReason = await again.finishReason;
+				const still = citationTrouble(
+					steps.at(-1)?.text ?? '',
+					handles,
+					true
+				);
+				console.warn('[chat] citations rewritten:', {
+					model: model.id,
+					trouble,
+					still,
+				});
+			}
+
 			citations = await verifyAnswer(
 				works.db,
 				handles,
 				steps.map((step) => step.text).join('\n')
 			);
-			usage = await result.totalUsage;
 
 			if (citations.length > 0) {
 				writer.write({ type: 'data-citations', data: citations });
 			}
 			writer.write({
 				type: 'finish',
-				finishReason: await result.finishReason,
+				finishReason,
 				messageMetadata: {
 					model_id: model.id,
 					// One turn later than the count the route checked, which is
