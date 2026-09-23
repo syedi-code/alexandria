@@ -140,11 +140,40 @@ row with `is_guest = 1` and an ordinary session, only past Turnstile and under a
 daily cap per address (stored as an HMAC, never the address). `guestBoundary()`
 then answers 403 `ACCOUNT_REQUIRED` to every route not in `GUEST_ROUTES` in
 `auth.ts`, so a route added later is closed to guests until someone opens it on
-purpose. A guest's questions count for ever, not a month. Signing in
+purpose. A guest's questions count for ever, not a week.
+
+The per-address cap is **not** a cost control and must not be sized like one.
+Turnstile is the real defence; the cap only stops one person with a script and
+patience, and a guest costs about $0.06. At five it turned away the sixth person
+on any campus or carrier network — thousands of people share a handful of
+addresses behind NAT — and turned them away invisibly, which is the worst
+version of that bug. It is 100, the bill is protected by `GUESTS_PER_DAY`
+across every address, and a refusal is logged either way. Signing in
 (`POST /session` with a guest cookie and a JWT) moves the guest's conversations
 and ledger rows to the account in one batch and deletes the guest; `adoptGuest`
 refuses anything that is not a guest. `POLICY_AUD` is a comma-separated list,
 one audience per `/login/<idp>` Access app. Off until `TURNSTILE_SECRET` is set.
+
+**An allowance is a week, and the number is a row, not a constant.**
+`TURNS_PER_WEEK` in `platform/limits.ts` is the default; `allowanceFor()` in
+`platform/usage.ts` reads the `settings` table over it, so the number can be
+turned without a deploy — which is the difference between fixing an underpriced
+tier today and fixing it at the next release. Free is *derived* from Paid by
+`FREE_SHARE_OF_PAID`, so an advertised ratio cannot drift when Paid is tuned. A
+missing or malformed row falls back to the constant rather than throwing: this
+is read on the way into every turn, and a typo must never be why nobody can ask
+a question.
+
+It was a calendar month, and the month was wrong twice. The 150 was sized on a
+50k-token turn and the ledger says a real one is ~100k, so a Pro question costs
+$0.20-0.28 and 150 of them is $30-41 against $19 net. And a month lets one
+reader spend everything in two days and then sit locked out for twenty-eight. A
+week bounds both to a quarter. `billing_week` is stored beside `billing_month`
+for the reason `billing_month` is stored at all — `strftime` in a WHERE clause
+cannot use an index — and it is the ISO week, whose year is the year of its
+Thursday, so nobody gets a two-day week over the new year. `billing_month`
+stays, because the spend report and the CLI group by it and an allowance
+changing period is not a reason to lose the cost record.
 
 **Money goes through the webhook, and the webhook trusts only Stripe.**
 `api/billing/`. The signature is verified before anything is read; then each

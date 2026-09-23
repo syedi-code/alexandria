@@ -12,12 +12,37 @@
 export const GUEST_TURNS = 3;
 
 /**
- * Guests one address may make in a UTC day. Anyone can clear their cookies
- * and be a new guest, and every guest question costs money; Turnstile stops
- * scripts, and this stops a person with a script and patience. Five leaves
- * room for a household or a library behind one address.
+ * Guests one address may make in a UTC day.
+ *
+ * This is not a cost control and must not be sized like one. Turnstile is the
+ * real defence and runs before a guest is made; what is left for this to stop
+ * is one person with a script and patience, and three turns on the cheapest
+ * model is about $0.06 a guest — so a hundred from one address in a day is
+ * about $6, which is an absurd amount of deliberate effort for the result.
+ *
+ * It was five, on the reasoning that five leaves room for a household. A
+ * university campus is not a household: thousands of people share a handful
+ * of addresses behind NAT, and a mobile carrier puts a whole city behind
+ * CGNAT. At five, the sixth person on a campus network to open Scribe on a
+ * given day was refused — and refused invisibly, because a guest that cannot
+ * be made leaves the reader in the `none` state with no explanation. That is
+ * the launch audience, turned away by a constant.
+ *
+ * The bound that actually protects the bill is `GUESTS_PER_DAY` below, which
+ * does not care how the addresses are distributed.
  */
-export const GUESTS_PER_ADDRESS_PER_DAY = 5;
+export const GUESTS_PER_ADDRESS_PER_DAY = 100;
+
+/**
+ * Guests made in a UTC day, across every address. This is the real cost
+ * ceiling, and it fails closed for new visitors — so it belongs well above
+ * any plausible day rather than close to one, and it logs loudly when it
+ * trips, because the day it fires is a day Scribe turned strangers away.
+ */
+export const GUESTS_PER_DAY = 2_000;
+
+/** The row `guest_ips` keeps the day's total in. Not a hash, so it can never collide with one. */
+const ALL_ADDRESSES = 'all';
 
 /** How long an unused guest is kept before the daily job removes it. */
 export const GUEST_RETENTION_DAYS = 30;
@@ -52,8 +77,13 @@ export async function hashAddress(
 
 /**
  * Count one more guest against an address for today, and say whether it is
- * within the cap. The increment and the read are one statement, so two
- * requests at once cannot both be let in as the fifth.
+ * within both bounds. Each increment and its read are one statement, so two
+ * requests at once cannot both be let in as the last one allowed.
+ *
+ * A refusal is logged rather than only returned. A blocked address is
+ * invisible from the outside — the reader gets no error worth reading and the
+ * maintainer gets nothing at all — and the whole failure this replaces was
+ * one nobody could see.
  */
 export async function admitGuestFrom(
 	db: D1Database,
@@ -61,15 +91,34 @@ export async function admitGuestFrom(
 	at: Date = new Date()
 ): Promise<boolean> {
 	const day = at.toISOString().slice(0, 10);
-	const row = await db
-		.prepare(
-			`INSERT INTO guest_ips (ip_hash, day, count) VALUES (?, ?, 1)
-			 ON CONFLICT(ip_hash, day) DO UPDATE SET count = count + 1
-			 RETURNING count`
-		)
-		.bind(addressHash, day)
-		.first<{ count: number }>();
-	return (row?.count ?? Infinity) <= GUESTS_PER_ADDRESS_PER_DAY;
+	const count = async (key: string) => {
+		const row = await db
+			.prepare(
+				`INSERT INTO guest_ips (ip_hash, day, count) VALUES (?, ?, 1)
+				 ON CONFLICT(ip_hash, day) DO UPDATE SET count = count + 1
+				 RETURNING count`
+			)
+			.bind(key, day)
+			.first<{ count: number }>();
+		return row?.count ?? Infinity;
+	};
+
+	const today = await count(ALL_ADDRESSES);
+	if (today > GUESTS_PER_DAY) {
+		console.warn(
+			`[guests] the day's ceiling is reached: ${today} of ${GUESTS_PER_DAY}. New visitors are being turned away.`
+		);
+		return false;
+	}
+
+	const fromHere = await count(addressHash);
+	if (fromHere > GUESTS_PER_ADDRESS_PER_DAY) {
+		console.warn(
+			`[guests] ${addressHash.slice(0, 12)}… refused: ${fromHere} today, over ${GUESTS_PER_ADDRESS_PER_DAY}. A shared address behind NAT looks like this.`
+		);
+		return false;
+	}
+	return true;
 }
 
 /** A new guest. The id is random, so a guest can never be guessed or claimed. */

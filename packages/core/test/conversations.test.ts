@@ -19,7 +19,7 @@ import {
 	verifyAnswer,
 	type ChatMessage,
 } from '../conversations/index.js';
-import { billingMonth, turnsThisMonth } from '../platform/index.js';
+import { billingMonth, turnsThisWeek } from '../platform/index.js';
 
 let db: TestDatabase;
 let documentId: string;
@@ -540,8 +540,8 @@ describe('the usage ledger', () => {
 			});
 		}
 
-		expect(await turnsThisMonth(db.d1, ids.userAdmin)).toBe(2);
-		expect(await turnsThisMonth(db.d1, ids.userOther)).toBe(1);
+		expect(await turnsThisWeek(db.d1, ids.userAdmin)).toBe(2);
+		expect(await turnsThisWeek(db.d1, ids.userOther)).toBe(1);
 	});
 
 	it('leaves no row for a turn that reported no usage', async () => {
@@ -552,7 +552,7 @@ describe('the usage ledger', () => {
 			conversationId: conversation.id,
 			message: turn('failed'),
 		});
-		expect(await turnsThisMonth(db.d1, ids.userAdmin)).toBe(0);
+		expect(await turnsThisWeek(db.d1, ids.userAdmin)).toBe(0);
 	});
 
 	it('does not double-count a message saved twice as it streams', async () => {
@@ -566,7 +566,7 @@ describe('the usage ledger', () => {
 				usage: { inputTokens, outputTokens: 1 },
 			});
 		}
-		expect(await turnsThisMonth(db.d1, ids.userAdmin)).toBe(1);
+		expect(await turnsThisWeek(db.d1, ids.userAdmin)).toBe(1);
 		const row = await db.d1
 			.prepare(`SELECT input_tokens FROM usage_events WHERE id = 'same'`)
 			.first<{ input_tokens: number }>();

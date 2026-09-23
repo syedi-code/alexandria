@@ -18,6 +18,7 @@ import {
 	adoptGuest,
 	GUEST_TURNS,
 	GUESTS_PER_ADDRESS_PER_DAY,
+	GUESTS_PER_DAY,
 	pruneGuests,
 } from '@alexandria/core/platform';
 
@@ -235,16 +236,37 @@ describe('POST /session/guest', () => {
 		// Another address is another count.
 		await becomeGuest('198.51.100.20');
 
-		const stored = db.raw
-			.prepare(`SELECT ip_hash FROM guest_ips`)
-			.all() as {
-			ip_hash: string;
-		}[];
+		// The day's own total shares the table under a key that is not a hash,
+		// so it can never collide with one.
+		const stored = (
+			db.raw.prepare(`SELECT ip_hash FROM guest_ips`).all() as {
+				ip_hash: string;
+			}[]
+		).filter(({ ip_hash }) => ip_hash !== 'all');
 		expect(stored).toHaveLength(2);
 		for (const { ip_hash } of stored) {
 			expect(ip_hash).toMatch(/^[0-9a-f]{64}$/);
 			expect(ip_hash).not.toContain('203.0.113.7');
 		}
+	});
+
+	// The bound that actually protects the bill, and the one that fails closed
+	// for people who have done nothing wrong — so it is held to firing only
+	// where it is meant to.
+	it("refuses everyone once the day's ceiling is reached, whatever the address", async () => {
+		db.raw
+			.prepare(
+				`INSERT INTO guest_ips (ip_hash, day, count) VALUES ('all', ?, ?)`
+			)
+			.run(new Date().toISOString().slice(0, 10), GUESTS_PER_DAY);
+
+		const over = await call('/session/guest', {
+			method: 'POST',
+			address: '198.51.100.77',
+			body: { turnstile_token: 't' },
+		});
+		expect(over.status).toBe(429);
+		expect(count(`SELECT COUNT(*) AS n FROM users`)).toBe(0);
 	});
 
 	it('makes no guest for a request with no address to cap', async () => {
