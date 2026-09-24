@@ -25,9 +25,36 @@ export async function passedTurnstile(
 			method: 'POST',
 			body: form,
 		});
-		if (!response.ok) return false;
-		const outcome = (await response.json()) as { success?: boolean };
-		return outcome.success === true;
+		if (!response.ok) {
+			console.error(`[guest] Turnstile answered ${response.status}`);
+			return false;
+		}
+		const outcome = (await response.json()) as {
+			'success'?: boolean;
+			'error-codes'?: string[];
+		};
+		if (outcome.success === true) return true;
+
+		// Cloudflare says *why* it refused, and the reasons are not alike: a
+		// bad token is a visitor to turn away, a bad secret is a deployment
+		// that turns away everyone and says nothing. This threw the codes away,
+		// so a secret that was never right looked exactly like a quiet site.
+		const codes = outcome['error-codes'] ?? [];
+		const ours = codes.some((code) =>
+			[
+				'invalid-input-secret',
+				'missing-input-secret',
+				'bad-request',
+			].includes(code)
+		);
+		console[ours ? 'error' : 'warn'](
+			`[guest] Turnstile refused: ${codes.join(', ') || 'no reason given'}${
+				ours
+					? ' — this is our secret, not the visitor. No guest can be made.'
+					: ''
+			}`
+		);
+		return false;
 	} catch (error) {
 		console.error('[guest] Turnstile could not be reached', error);
 		return false;
