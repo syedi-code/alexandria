@@ -17,6 +17,7 @@ interface MessageRow {
 	id: string;
 	role: ChatMessage['role'];
 	parts: string;
+	model_id: string | null;
 }
 
 export async function listMessages(
@@ -26,7 +27,7 @@ export async function listMessages(
 ): Promise<ChatMessage[]> {
 	const { results } = await db
 		.prepare(
-			`SELECT m.id, m.role, m.parts
+			`SELECT m.id, m.role, m.parts, m.model_id
 			   FROM messages m
 			   JOIN conversations c ON c.id = m.conversation_id
 			  WHERE m.conversation_id = ? AND c.user_id = ? AND c.deleted_at IS NULL
@@ -34,10 +35,14 @@ export async function listMessages(
 		)
 		.bind(conversationId, userId)
 		.all<MessageRow>();
+	// The model rides back as the metadata the stream first gave it, so a
+	// saved answer is signed by the model that wrote it, as a live one is
+	// (scribe#60). A question has none.
 	return (results ?? []).map((row) => ({
 		id: row.id,
 		role: row.role,
 		parts: JSON.parse(row.parts),
+		...(row.model_id && { metadata: { model_id: row.model_id } }),
 	}));
 }
 
