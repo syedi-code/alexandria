@@ -153,7 +153,10 @@ export async function allowanceFor(
 		const set = Number(row?.value);
 		if (Number.isInteger(set) && set > 0) paid = set;
 	} catch (error) {
-		console.error('[limits] the allowance setting could not be read', error);
+		console.error(
+			'[limits] the allowance setting could not be read',
+			error
+		);
 	}
 	return { paid, free: Math.max(1, Math.round(paid * FREE_SHARE_OF_PAID)) };
 }
@@ -213,8 +216,7 @@ export async function entitlementFor(
 		plan: guest ? 'free' : plan,
 		guest,
 		used: row?.used ?? 0,
-		limit:
-			role === 'admin' ? null : guest ? GUEST_TURNS : allowance[plan],
+		limit: role === 'admin' ? null : guest ? GUEST_TURNS : allowance[plan],
 		resets_at: guest ? null : weekResetsAt(at),
 	};
 }

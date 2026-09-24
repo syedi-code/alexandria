@@ -121,9 +121,7 @@ describe('entitlements', () => {
 			.run();
 		expect(await allowanceFor(db.d1)).toEqual({ paid: 50, free: 6 });
 
-		await db.d1
-			.prepare(`UPDATE settings SET value = 'nonsense'`)
-			.run();
+		await db.d1.prepare(`UPDATE settings SET value = 'nonsense'`).run();
 		expect(await allowanceFor(db.d1)).toEqual({
 			paid: TURNS_PER_WEEK.paid,
 			free: TURNS_PER_WEEK.free,
