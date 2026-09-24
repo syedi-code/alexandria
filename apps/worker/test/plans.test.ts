@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { TURNS_PER_MONTH } from '@alexandria/core/platform';
+import { TURNS_PER_WEEK } from '@alexandria/core/platform';
 import router from '../api/router.js';
 import {
 	migratedTestDatabase,
@@ -84,11 +84,11 @@ describe('GET /plans', () => {
 		const [free, paid] = plans;
 
 		expect(free.id).toBe('free');
-		expect(free.turns_per_month).toBe(TURNS_PER_MONTH.free);
+		expect(free.turns_per_week).toBe(TURNS_PER_WEEK.free);
 		expect(free.models.map((m) => m.id)).toEqual(['gpt-5.6-luna']);
 
 		expect(paid.id).toBe('paid');
-		expect(paid.turns_per_month).toBe(TURNS_PER_MONTH.paid);
+		expect(paid.turns_per_week).toBe(TURNS_PER_WEEK.paid);
 		// Sol is the admin's, and no plan is sold with it.
 		expect(paid.models.map((m) => m.id)).toEqual([
 			'gpt-5.6-luna',

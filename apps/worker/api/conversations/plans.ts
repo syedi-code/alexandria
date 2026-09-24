@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { AuthContext, Env, UserPlan } from '@alexandria/core/platform';
-import { PAGE_SCANS, TURNS_PER_MONTH } from '@alexandria/core/platform';
+import { allowanceFor, PAGE_SCANS } from '@alexandria/core/platform';
 import { requireAuth } from '../auth.js';
 import { isBillingOpen, priceOnSale, type Price } from '../billing/stripe.js';
 import { availableModels } from './models.js';
@@ -8,7 +8,7 @@ import { availableModels } from './models.js';
 /**
  * What each plan gives, for a client to lay side by side.
  *
- * Read from the same two places the limit is enforced from — `TURNS_PER_MONTH`
+ * Read from the same two places the limit is enforced from — the allowance
  * and the model table — so the page that sells a plan cannot promise a number
  * or a model the server would then refuse. A free reader's roster lists only
  * free models, which is why this is its own route: the plans page has to name
@@ -16,7 +16,14 @@ import { availableModels } from './models.js';
  */
 export interface PlanOffer {
 	id: UserPlan;
+	/**
+	 * Kept because the API is additive-only and a tab open across the deploy
+	 * still reads it. It is the weekly allowance over an average month, which
+	 * is a true sentence about the same plan and not a second number anyone
+	 * is held to; `turns_per_week` is what the server actually enforces.
+	 */
 	turns_per_month: number;
+	turns_per_week: number;
 	models: { id: string; label: string; provider: string }[];
 	/** Whether the scan of a cited page can be opened, one page at a time. */
 	page_scans: boolean;
@@ -31,9 +38,15 @@ const app = new Hono<{
 
 app.use('/plans', requireAuth());
 
-const offer = (env: Env, id: UserPlan, price: Price | null): PlanOffer => ({
+const offer = (
+	env: Env,
+	id: UserPlan,
+	price: Price | null,
+	allowance: Record<UserPlan, number>
+): PlanOffer => ({
 	id,
-	turns_per_month: TURNS_PER_MONTH[id],
+	turns_per_month: Math.round((allowance[id] * 52) / 12),
+	turns_per_week: allowance[id],
 	models: availableModels(env, id).map(({ id, label, provider }) => ({
 		id,
 		label,
@@ -66,9 +79,15 @@ async function currentPrice(env: Env): Promise<Price | null> {
 
 // GET /plans
 app.get('/plans', async (c) => {
-	const price = await currentPrice(c.env);
+	const [price, allowance] = await Promise.all([
+		currentPrice(c.env),
+		allowanceFor(c.env.DB),
+	]);
 	return c.json({
-		plans: [offer(c.env, 'free', price), offer(c.env, 'paid', price)],
+		plans: [
+			offer(c.env, 'free', price, allowance),
+			offer(c.env, 'paid', price, allowance),
+		],
 	});
 });
 
