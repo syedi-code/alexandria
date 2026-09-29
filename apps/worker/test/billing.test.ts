@@ -330,6 +330,15 @@ describe('POST /billing/checkout', () => {
 		expect(planOf('ada')).toBe('free');
 	});
 
+	// Live, Managed Payments refused `automatic_tax: false` and every reader
+	// got a 500. Leaving it out lets the account decide who owes the tax.
+	it('never turns tax off, and saves the address it is taxed by', async () => {
+		await checkout('ada');
+		const [session] = stripe.sessions;
+		expect(session).not.toHaveProperty('automatic_tax');
+		expect(session.customer_update).toEqual({ address: 'auto' });
+	});
+
 	it('makes one customer however many times it is pressed', async () => {
 		await Promise.all([checkout('ada'), checkout('ada'), checkout('ada')]);
 		await checkout('ada');

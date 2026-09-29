@@ -85,6 +85,10 @@ app.post('/billing/checkout', async (c) => {
 	}
 
 	const origin = scribeOrigin(c.env);
+	// Managed Payments makes Stripe the seller and the one who owes the tax,
+	// and it refuses `automatic_tax: false` outright. Leaving it out lets
+	// whatever the account says decide; the address is saved either way,
+	// because a renewal is taxed where the reader lives.
 	const automaticTax = c.env.STRIPE_AUTOMATIC_TAX === 'true';
 	const session = await stripe.checkout.sessions.create({
 		mode: 'subscription',
@@ -94,8 +98,8 @@ app.post('/billing/checkout', async (c) => {
 		subscription_data: { metadata: { user_id: user.id } },
 		success_url: `${origin}/?checkout=done`,
 		cancel_url: `${origin}/?checkout=cancelled`,
-		automatic_tax: { enabled: automaticTax },
-		...(automaticTax ? { customer_update: { address: 'auto' } } : {}),
+		...(automaticTax ? { automatic_tax: { enabled: true } } : {}),
+		customer_update: { address: 'auto' },
 		allow_promotion_codes: false,
 	});
 	if (!session.url)
