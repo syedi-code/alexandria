@@ -47,6 +47,8 @@ export interface SaveMessageInput {
 	modelId?: string;
 	usage?: MessageUsage;
 	citations?: readonly AnswerCitation[];
+	/** Spend, but not one of the reader's questions (`unchecked_turn`). */
+	uncounted?: boolean;
 }
 
 /**
@@ -116,7 +118,9 @@ export function saveMessageStatements(
 			? [
 					usageEventStatement(
 						{
-							kind: 'chat_turn',
+							kind: input.uncounted
+								? 'unchecked_turn'
+								: 'chat_turn',
 							modelId: input.modelId,
 							conversationId,
 							messageId: message.id,

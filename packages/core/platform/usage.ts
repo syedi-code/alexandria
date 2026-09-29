@@ -18,7 +18,12 @@ export interface TokenUsage {
 }
 
 export interface UsageEvent extends TokenUsage {
-	kind: 'chat_turn';
+	/**
+	 * `unchecked_turn` is a turn whose answer could not be checked even after
+	 * a second draft. It is spend like any other, but not one of the reader's
+	 * questions: only `chat_turn` is counted against an allowance.
+	 */
+	kind: 'chat_turn' | 'unchecked_turn';
 	modelId?: string;
 	conversationId: string;
 	messageId: string;
@@ -114,6 +119,22 @@ export async function turnsThisWeek(
 		.prepare(
 			`SELECT COUNT(*) AS n FROM usage_events
 			  WHERE user_id = ? AND billing_week = ? AND kind = 'chat_turn'`
+		)
+		.bind(userId, billingWeek(at))
+		.first<{ n: number }>();
+	return row?.n ?? 0;
+}
+
+/** Turns this week whose answer could not be checked, and so were not counted. */
+export async function uncheckedTurnsThisWeek(
+	db: D1Database,
+	userId: string,
+	at: string | Date = new Date()
+): Promise<number> {
+	const row = await db
+		.prepare(
+			`SELECT COUNT(*) AS n FROM usage_events
+			  WHERE user_id = ? AND billing_week = ? AND kind = 'unchecked_turn'`
 		)
 		.bind(userId, billingWeek(at))
 		.first<{ n: number }>();

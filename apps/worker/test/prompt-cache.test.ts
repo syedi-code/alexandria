@@ -134,7 +134,7 @@ describe('the cache breakpoint on a turn', () => {
 		}
 	});
 
-	it('is still there on the last step, when the tools are taken away', async () => {
+	it('is still there on the last step', async () => {
 		const steps = [...Array.from({ length: MAX_STEPS - 1 }, search), reply];
 		const model = new MockLanguageModelV4({
 			doStream: steps.map((parts) => ({
@@ -145,7 +145,7 @@ describe('the cache breakpoint on a turn', () => {
 		await runTurn(model);
 
 		const last = model.doStreamCalls[MAX_STEPS - 1];
-		expect(last.toolChoice?.type).toBe('none');
+		expect(JSON.stringify(last.prompt)).toContain('This is your last step');
 		expect(marked(last.prompt)).toEqual([last.prompt.length - 1]);
 	});
 });

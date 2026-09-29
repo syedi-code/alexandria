@@ -24,6 +24,8 @@ import {
 } from '../api/conversations/chat.js';
 import {
 	asTitle,
+	instructionsFor,
+	QUOTING_INSTRUCTIONS,
 	SCRIBE_INSTRUCTIONS,
 } from '../api/conversations/instructions.js';
 import type { ModelEntry } from '../api/conversations/models.js';
@@ -225,8 +227,12 @@ describe('a chat turn', () => {
 			expect(call.toolChoice?.type).not.toBe('none');
 		}
 
+		// Claude is asked, not stripped of its tools: the Anthropic provider
+		// implements `none` by deleting them, and Claude, shown calls to tools
+		// it no longer had, said it had read nothing.
 		const last = model.doStreamCalls[MAX_STEPS - 1];
-		expect(last.toolChoice?.type).toBe('none');
+		expect(last.toolChoice?.type).not.toBe('none');
+		expect(last.tools?.length).toBeGreaterThan(0);
 		expect(JSON.stringify(last.prompt)).toContain('This is your last step');
 
 		const [, answered] = await listMessages(
@@ -522,6 +528,34 @@ describe('how an answer is asked to cite', () => {
 		expect(SCRIBE_INSTRUCTIONS).toContain(
 			'Your first word is the first word of the answer'
 		);
+	});
+});
+
+/**
+ * Claude Sonnet 5 kept "never put quotation marks around quoted words" and
+ * dropped the `<cite>` meant to replace them: on a live turn on 29 September
+ * both drafts copied the page word for word with nothing to show where. Asked
+ * for quotation marks it writes them, and the server writes the cite.
+ */
+describe('how Claude is asked to quote', () => {
+	it('is the grammar Claude keeps, and GPT keeps its own', () => {
+		expect(instructionsFor('anthropic')).toBe(QUOTING_INSTRUCTIONS);
+		expect(instructionsFor('openai')).toBe(SCRIBE_INSTRUCTIONS);
+	});
+
+	it('asks for quotation marks, and never for a handle', () => {
+		expect(QUOTING_INSTRUCTIONS).toContain(
+			'Put the words you quote in double quotation marks'
+		);
+		expect(QUOTING_INSTRUCTIONS).not.toContain('<cite');
+		expect(QUOTING_INSTRUCTIONS).toContain('Never write page handles');
+		expect(QUOTING_INSTRUCTIONS).toContain(
+			"Never copy a page's words without quotation marks"
+		);
+	});
+
+	it('stays short enough to send on every step', () => {
+		expect(QUOTING_INSTRUCTIONS.length).toBeLessThan(3000);
 	});
 });
 
