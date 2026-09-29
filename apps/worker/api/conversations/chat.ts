@@ -10,12 +10,15 @@ import {
 	type LanguageModel,
 	type LanguageModelUsage,
 	type ModelMessage,
+	type InferUIMessageChunk,
 	type UIMessage,
 } from 'ai';
 import {
 	citationTrouble,
 	omitOldToolOutputs,
 	PageHandles,
+	PageShelf,
+	QuoteMarker,
 	redactLibraryText,
 	saveMessage,
 	updateConversation,
@@ -23,13 +26,16 @@ import {
 	withCollapsedQuotes,
 	type AnswerCitation,
 	type ChatMessage,
+	type CitationTrouble,
 	type ConversationRow,
 } from '@alexandria/core/conversations';
+import { uncheckedTurnsThisWeek } from '@alexandria/core/platform';
 import type { WorksToolContext } from '@alexandria/core/works';
 import {
+	answerFrom,
 	asTitle,
 	citeAgain,
-	SCRIBE_INSTRUCTIONS,
+	instructionsFor,
 	TITLE_INSTRUCTIONS,
 } from './instructions.js';
 import type { ModelEntry } from './models.js';
@@ -114,7 +120,13 @@ export function withCacheBreakpoint(messages: ModelMessage[]): ModelMessage[] {
 
 export type ScribeMessage = UIMessage<
 	{ model_id: string; allowance?: Allowance },
-	{ citations: AnswerCitation[] }
+	{
+		citations: AnswerCitation[];
+		/** Written just before a second draft streams, so the reader is told why the first went. */
+		redraft: { reason: CitationTrouble['kind'] };
+		/** The second draft could not be checked either; it reaches the reader as it is. */
+		unchecked: { reason: CitationTrouble['kind'] };
+	}
 >;
 
 /** What is left of this month, echoed back so the client can show a counter. */
@@ -312,6 +324,81 @@ export function withRedactedToolOutput(
 	);
 }
 
+/**
+ * The answer as it streams, with every quotation that is on a page the model
+ * read marked as a citation of it (`QuoteMarker`), and the text of each step
+ * kept as it was sent — which is what is checked, and what is saved.
+ */
+type ScribeChunk = InferUIMessageChunk<ScribeMessage>;
+
+class MarkedAnswer {
+	private readonly markers = new Map<string, QuoteMarker>();
+	/** What each step wrote, after marking. */
+	readonly steps: string[] = [];
+	/** Quotations of five words or more that no page shown holds, last step only. */
+	unmarked = 0;
+
+	constructor(private readonly shelf: PageShelf) {}
+
+	*pass(chunk: ScribeChunk): Generator<ScribeChunk> {
+		switch (chunk.type) {
+			case 'start-step':
+				this.steps.push('');
+				this.unmarked = 0;
+				break;
+			case 'tool-output-available':
+				this.shelf.addFrom(chunk.output);
+				break;
+			case 'text-start':
+				this.markers.set(chunk.id, new QuoteMarker(this.shelf));
+				break;
+			case 'text-delta': {
+				const delta = this.markerFor(chunk.id).push(chunk.delta);
+				this.record(delta);
+				if (delta) yield { ...chunk, delta };
+				return;
+			}
+			case 'text-end': {
+				const marker = this.markerFor(chunk.id);
+				const rest = marker.flush();
+				this.record(rest);
+				this.unmarked += marker.unmarked;
+				this.markers.delete(chunk.id);
+				if (rest)
+					yield { type: 'text-delta', id: chunk.id, delta: rest };
+				break;
+			}
+		}
+		yield chunk;
+	}
+
+	get last(): string {
+		return this.steps.at(-1) ?? '';
+	}
+
+	private markerFor(id: string): QuoteMarker {
+		let marker = this.markers.get(id);
+		if (!marker) {
+			marker = new QuoteMarker(this.shelf);
+			this.markers.set(id, marker);
+		}
+		return marker;
+	}
+
+	private record(text: string) {
+		if (!text) return;
+		if (this.steps.length === 0) this.steps.push('');
+		this.steps[this.steps.length - 1] += text;
+	}
+}
+
+/**
+ * An answer that could not be checked even after a second draft does not use
+ * up a question — a few times a week. Past that it counts, so asking for
+ * uncheckable answers is not a way round the allowance.
+ */
+const UNCOUNTED_PER_WEEK = 3;
+
 async function drain(stream: ReadableStream<unknown>): Promise<void> {
 	const reader = stream.getReader();
 	while (!(await reader.read()).done);
@@ -366,9 +453,25 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 		{ tools, ignoreIncompleteToolCalls: true }
 	);
 
+	// Every page the conversation has been shown, so a quotation from an
+	// earlier turn's reading is found as well as one from this turn's.
+	const shelf = new PageShelf();
+	for (const earlier of history) {
+		for (const part of earlier.parts as {
+			type?: string;
+			output?: unknown;
+		}[])
+			if (part.type?.startsWith('tool-')) shelf.addFrom(part.output);
+	}
+	const answer = new MarkedAnswer(shelf);
+	const question = textOf(message);
+	const instructions = instructionsFor(model.provider);
+
 	let citations: AnswerCitation[] = [];
 	let usage: LanguageModelUsage | undefined;
 	let failed = false;
+	let unchecked = false;
+	let uncounted = false;
 
 	const stream = createUIMessageStream<ScribeMessage>({
 		originalMessages: messages,
@@ -383,7 +486,7 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 
 			const result = streamText({
 				model: turn.languageModel,
-				instructions: SCRIBE_INSTRUCTIONS,
+				instructions,
 				messages: modelMessages,
 				tools,
 				stopWhen: isStepCount(MAX_STEPS),
@@ -395,11 +498,16 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 					...(stepNumber < MAX_STEPS - 1
 						? {}
 						: {
-								toolChoice: 'none' as const,
-								instructions: [
-									SCRIBE_INSTRUCTIONS,
-									LAST_STEP,
-								].join('\n\n'),
+								// The Anthropic provider sends `none` by deleting the
+								// tools, and Claude, shown calls to tools it did not
+								// have, said it had read nothing. It is asked instead;
+								// a turn that still ends mid-read is answered below.
+								...(model.provider === 'anthropic'
+									? {}
+									: { toolChoice: 'none' as const }),
+								instructions: [instructions, LAST_STEP].join(
+									'\n\n'
+								),
 							}),
 				}),
 			});
@@ -408,36 +516,31 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 				sendFinish: false,
 				onError,
 			})) {
-				writer.write(chunk);
+				for (const marked of answer.pass(chunk)) writer.write(marked);
 			}
 			// The error is already in the stream; awaiting results would raise it again.
 			if (failed) return;
 
-			let steps = await result.steps;
 			usage = await result.totalUsage;
 			let finishReason = await result.finishReason;
+			const readThisTurn = (await result.steps).some(readsPages);
 
-			// An answer whose citations cannot be read is written once more,
-			// in the grammar that can be checked. Translating it was not
-			// possible: a bare `(P14)` does not say where its quotation starts.
-			// It streams as a step of its own, and the reader is shown the last
-			// step as the answer, so the first draft becomes working.
-			const trouble = citationTrouble(
-				steps.at(-1)?.text ?? '',
-				handles,
-				steps.some(readsPages)
-			);
-			if (trouble) {
+			/**
+			 * One more pass, with no tools: the question, the draft if there
+			 * is one, and the pages written out as text. Nothing in it
+			 * depends on a tool the model can no longer call.
+			 */
+			const writeAgain = async (draft: string, request: string) => {
 				const again = streamText({
 					model: turn.languageModel,
-					instructions: SCRIBE_INSTRUCTIONS,
+					instructions,
 					messages: withCacheBreakpoint([
-						...modelMessages,
-						...(await result.response).messages,
-						{ role: 'user', content: citeAgain(trouble) },
+						{ role: 'user', content: question },
+						...(draft
+							? [{ role: 'assistant' as const, content: draft }]
+							: []),
+						{ role: 'user', content: request },
 					]),
-					tools,
-					toolChoice: 'none',
 					abortSignal,
 				});
 				for await (const chunk of again.toUIMessageStream<ScribeMessage>(
@@ -447,19 +550,53 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 						onError,
 					}
 				)) {
-					writer.write(chunk);
+					for (const marked of answer.pass(chunk))
+						writer.write(marked);
 				}
-				if (failed) return;
-
-				// The draft is not checked: its quotations are written again below it.
-				steps = [...steps.slice(0, -1), ...(await again.steps)];
-				usage = addUsage(usage, await again.totalUsage);
+				if (failed) return false;
+				usage = addUsage(usage!, await again.totalUsage);
 				finishReason = await again.finishReason;
-				const still = citationTrouble(
-					steps.at(-1)?.text ?? '',
-					handles,
-					true
-				);
+				return true;
+			};
+
+			// Out of steps in the middle of reading: nothing was written.
+			if (!answer.last.trim() && readThisTurn && shelf.size > 0) {
+				if (!(await writeAgain('', answerFrom(shelf.render())))) return;
+			}
+
+			// An answer whose citations cannot be read is written once more,
+			// in the grammar that can be checked. The reader is told first,
+			// so a draft does not vanish from under them unexplained; the
+			// draft stays in the message, and is not checked.
+			let draftAt = -1;
+			const trouble = citationTrouble(
+				answer.last,
+				handles,
+				readThisTurn || answer.unmarked > 0
+			);
+			if (trouble) {
+				const draft = answer.last;
+				draftAt = answer.steps.length - 1;
+				writer.write({
+					type: 'data-redraft',
+					data: { reason: trouble.kind },
+				});
+				if (
+					!(await writeAgain(
+						draft,
+						citeAgain(trouble, shelf.render(), model.provider)
+					))
+				)
+					return;
+
+				const still = citationTrouble(answer.last, handles, true);
+				if (still) {
+					unchecked = true;
+					writer.write({
+						type: 'data-unchecked',
+						data: { reason: still.kind },
+					});
+				}
 				console.warn('[chat] citations rewritten:', {
 					model: model.id,
 					trouble,
@@ -470,8 +607,13 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 			citations = await verifyAnswer(
 				works.db,
 				handles,
-				steps.map((step) => step.text).join('\n')
+				answer.steps.filter((_, at) => at !== draftAt).join('\n')
 			);
+
+			uncounted =
+				unchecked &&
+				(await uncheckedTurnsThisWeek(works.db, conversation.user_id)) <
+					UNCOUNTED_PER_WEEK;
 
 			if (citations.length > 0) {
 				writer.write({ type: 'data-citations', data: citations });
@@ -486,7 +628,7 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 					// what they had.
 					allowance: turn.allowance && {
 						...turn.allowance,
-						used: turn.allowance.used + 1,
+						used: turn.allowance.used + (uncounted ? 0 : 1),
 					},
 				},
 			});
@@ -508,6 +650,7 @@ export async function streamTurn(turn: Turn): Promise<Response> {
 					cacheWriteTokens: usage.inputTokenDetails?.cacheWriteTokens,
 				},
 				citations,
+				uncounted,
 			});
 			// Any turn that worked, not only the first. A conversation whose
 			// first turn failed used to keep a null title for ever, and the
