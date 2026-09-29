@@ -148,10 +148,26 @@ sql/search/              schema of the SEARCH database (the page index)
   `normaliseCitationShapes()` translates before `verifyAnswer` and before
   saving. **Never widen `CITATION`** — `FOREIGN_SHAPES` is a table in front of
   the one grammar scribe must agree with.
+- **Claude is asked for quotation marks, never for handles**
+  (`QUOTING_INSTRUCTIONS`). It kept "no quotation marks" and dropped `<cite>`,
+  so its answers copied pages with nothing to show where. GPT keeps `<cite>`
+  (`instructionsFor()`).
+- **A quotation in quotation marks is marked by the server.** `QuoteMarker`
+  (`conversations/quotes.ts`) finds each quoted run of five words or more on a
+  page the conversation has been shown, and writes `<cite P7>` round it as it
+  streams — matched as `checkQuote` matches, so what it marks, the verifier
+  finds.
 - **`citationTrouble()`** catches an answer naming a handle no citation claimed,
-  or reading pages and citing none. A bare handle cannot be translated, so
-  `streamTurn` asks once more via `citeAgain()` — **once only**, then it reaches
-  the reader as it is.
+  or reading pages and citing none. `streamTurn` asks once more via
+  `citeAgain()` — **once only**, then it reaches the reader as it is, marked
+  `data-unchecked` and not counted against the allowance (three a week).
+- **A second pass never carries tool calls.** It is the question, the draft and
+  the pages as text, with no tools. Re-sent tool calls with the tools removed
+  made Claude say it had read nothing. The Anthropic provider implements
+  `toolChoice: 'none'` by deleting the tools, so Claude's last step is asked,
+  not forced; a turn that ends mid-read is answered by `answerFrom()`.
+- **A second draft is announced** (`data-redraft`) before it streams. The first
+  draft stays in the message; scribe folds it away under a line saying why.
 - **An instruction a model half-keeps is not a rule.** Quoted words were written
   twice on 29 of 137 citations, unmoved by three syntax revisions and not
   reproducible on demand. `collapseQuotedDuplicates()` removes it before saving

@@ -10,6 +10,7 @@ export * from './conversations.js';
 export * from './messages.js';
 export * from './handles.js';
 export * from './citations.js';
+export * from './quotes.js';
 export * from './history.js';
 export * from './redaction.js';
 export * from './cited.js';
