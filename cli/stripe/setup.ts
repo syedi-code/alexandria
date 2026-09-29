@@ -34,9 +34,8 @@ const LOOKUP_KEY = 'scribe_paid_monthly';
 /**
  * Artificial Intelligence as a Service — cloud based, personal use. Stripe
  * needs a tax code on the product before it can watch how close sales are to
- * a registration threshold in any state or country, which it does for free
- * and without collecting anything. Nothing here charges tax: that waits for
- * STRIPE_AUTOMATIC_TAX, and for a registration to exist.
+ * a registration threshold in any state or country. The live account runs
+ * Managed Payments, so Stripe is the seller and collects the tax itself.
  */
 const TAX_CODE = 'txcd_10105001';
 const AMOUNT_CENTS = 2000;
@@ -69,7 +68,8 @@ if (!key) {
 	console.error('Set STRIPE_SECRET_KEY first.');
 	process.exit(1);
 }
-if (key.startsWith('sk_live_') !== live) {
+// A restricted key (rk_live_…) is as live as a standard one.
+if (/^[sr]k_live_/.test(key) !== live) {
 	console.error(
 		live
 			? '--live was given with a test key. Refusing.'
