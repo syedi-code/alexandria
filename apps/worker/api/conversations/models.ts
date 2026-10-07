@@ -35,7 +35,7 @@ export interface ModelEntry {
  */
 export const MODELS: readonly ModelEntry[] = [
 	{
-		// Not `gpt-5.6`: that is an alias for Sol, at twenty times the price.
+		// Not `gpt-5.6`: that is an alias for Sol, at twenty times the input price.
 		id: 'gpt-5.6-luna',
 		label: 'GPT-5.6 Luna',
 		provider: 'openai',
@@ -43,7 +43,8 @@ export const MODELS: readonly ModelEntry[] = [
 		free: true,
 	},
 	{
-		// Twenty times Luna's price. Never on a plan, so never on the plans page.
+		// Twenty times Luna's input price and about seventeen times its output
+		// (`PRICES` in core). Never on a plan, so never on the plans page.
 		id: 'gpt-5.6-sol',
 		label: 'GPT-5.6 Sol',
 		provider: 'openai',

@@ -37,10 +37,12 @@ Every npm script in alexandria. The frontends live in their own repos (`stylus`,
 | `npm run db:compare:staging-prod` | Diff two environments.                                          |
 | `npm run spend:prod`              | Model tokens and cost, per reader, per model.                   |
 
-`spend` reads the `usage` each assistant message already stores; it adds no
-accounting and enforces nothing. Rates live in `PRICES` at the top of
-`cli/db/model-spend.ts` and ship empty, so it reports tokens until you fill them
-in. `--since <date>` narrows the window, `--json` gives it to a script.
+`spend` reads the `usage_events` ledger, so cache reads and writes are priced at
+their own rates, and prints each model's share of input served from cache. Rates
+live in `PRICES` in `packages/core/platform/prices.ts`, each with the date it
+was checked; a model with no rate shows `—` and is named under the total.
+`--since <date>` narrows the window, `--breakdown` gives one row per model,
+reader and week, `--json` gives it to a script.
 
 ### Verification
 
