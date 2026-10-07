@@ -157,6 +157,11 @@ sql/search/              schema of the SEARCH database (the page index)
   page the conversation has been shown, and writes `<cite P7>` round it as it
   streams — matched as `checkQuote` matches, so what it marks, the verifier
   finds.
+- **A near quotation verifies.** When the exact match fails, `checkQuote`
+  accepts a quote of `MIN_NEAR_MATCH_WORDS` or more whose words are
+  `NEAR_MATCH_SIMILARITY` (80%) the page's, and returns `similarity` with it. An
+  exact match carries none. Short quotes never take this path: one word changes
+  their sense.
 - **`citationTrouble()`** catches an answer naming a handle no citation claimed,
   or reading pages and citing none. `streamTurn` asks once more via
   `citeAgain()` — **once only**, then it reaches the reader as it is, marked
