@@ -420,7 +420,7 @@ describe('citation verification', () => {
 		).toBe('unverified');
 	});
 
-	it('reports a quote broken by a scanning error as a partial match', () => {
+	it('verifies a quote broken by a scanning error as a near match', () => {
 		// "forms" came out of the scanner as "lOrms", mid-quote.
 		const page = onPage(
 			[
@@ -429,6 +429,19 @@ describe('citation verification', () => {
 				'lOrms, or natures.',
 			].join('\n')
 		);
+
+		expect(
+			checkQuote(
+				'there may be degrees in respect of their accidental qualities, but not in of their forms, or natures',
+				page
+			)
+		).toEqual({ status: 'verified', matched: [ref(1)], similarity: 0.83 });
+	});
+
+	it('says where a long quote stopped matching when it is not near enough', () => {
+		const page = onPage(
+			'there may be degrees in respect of their accidental qualities, but not in respect of their forms, or natures.'
+		);
 		const reason = (quote: string) => {
 			const check = checkQuote(quote, page);
 			return 'reason' in check ? check.reason : check.status;
@@ -436,12 +449,73 @@ describe('citation verification', () => {
 
 		expect(
 			reason(
-				'there may be degrees in respect of their accidental qualities, but not in of their forms, or natures'
+				'there may be degrees in respect of their accidental qualities, and these are what a man would call his virtues and his vices'
 			)
 		).toBe('partial_match');
 		expect(
 			reason('a sentence that has nothing to do with this page at all')
 		).toBe('not_found');
+	});
+
+	it('verifies a long quote with a word or two wrong, and says how near it was', () => {
+		const page = onPage(
+			'each of these gentlemen, in order to impugn on higher authority the weakness of primitive thought, claims that his own is based on the firmest rationalism'
+		);
+
+		// "the" dropped, and "primitive" written "savage": 2 edits in 25 words.
+		expect(
+			checkQuote(
+				'each of these gentlemen, in order to impugn on higher authority weakness of savage thought, claims that his own is based on the firmest rationalism',
+				page
+			)
+		).toEqual({ status: 'verified', matched: [ref(1)], similarity: 0.92 });
+	});
+
+	it('keeps an exact match free of a similarity', () => {
+		const page = onPage(
+			'each of these gentlemen, in order to impugn on higher authority the weakness of primitive thought'
+		);
+		expect(
+			checkQuote(
+				'in order to impugn on higher authority the weakness of primitive thought',
+				page
+			)
+		).toEqual({ status: 'verified', matched: [ref(1)] });
+	});
+
+	it('does not try a near match on a short quote, where one word is a different sentence', () => {
+		const page = onPage(
+			'Granted that we want the truth: why not rather untruth? And uncertainty? Even ignorance?'
+		);
+		expect(
+			checkQuote(
+				'Granted that we want the truth: why not rather beauty?',
+				page
+			).status
+		).toBe('unverified');
+	});
+
+	it('finds a near match that runs onto the next page', () => {
+		const page = onPage(
+			'what is outside, to what is different, to what is not itself; and this no is its creative deed.'
+		);
+		const next = {
+			...onPage(
+				'This inversion of the value-positing eye is of the essence of ressentiment'
+			),
+			ref: ref(2),
+		};
+
+		// "no" written "nay" and "the" dropped; the quote crosses the page.
+		const check = checkQuote(
+			'to what is not itself; and this nay is its creative deed. This inversion of value-positing eye',
+			page,
+			next
+		);
+		expect(check).toMatchObject({
+			status: 'verified',
+			matched: [ref(1), ref(2)],
+		});
 	});
 
 	it('does not match inside a longer word', () => {
