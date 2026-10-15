@@ -72,6 +72,11 @@ class TestStatement {
 		return (column ? (plain[column] ?? null) : plain) as T;
 	}
 
+	/** As D1 answers inside a batch: rows for a read, counts for a write. */
+	batchResult() {
+		return /^\s*(SELECT|WITH)\b/i.test(this.sql) ? this.all() : this.run();
+	}
+
 	async run() {
 		const result = this.stmt().run(...this.args());
 		return {
@@ -107,7 +112,7 @@ export function createTestDatabase(): TestDatabase {
 			try {
 				const results = [];
 				for (const statement of statements) {
-					results.push(await statement.run());
+					results.push(await statement.batchResult());
 				}
 				raw.exec('COMMIT');
 				return results;

@@ -44,7 +44,11 @@ const baseEnv = () => ({
 });
 
 /** A real session row plus its cookie, rather than the LOCAL_DEV shortcut. */
-function signIn(who: typeof ADMIN, role: 'admin' | 'member'): string {
+function signIn(
+	who: typeof ADMIN,
+	role: 'admin' | 'member',
+	expiresAt = '2099-01-01T00:00:00.000Z'
+): string {
 	const token = `token-${role}`;
 	db.raw
 		.prepare(
@@ -67,7 +71,7 @@ function signIn(who: typeof ADMIN, role: 'admin' | 'member'): string {
 			who.email,
 			role,
 			'2026-01-01T00:00:00.000Z',
-			'2099-01-01T00:00:00.000Z'
+			expiresAt
 		);
 	return `__session=${token}`;
 }
@@ -82,11 +86,20 @@ const call = (
 		...overrides,
 	});
 
-const as = (cookie: string, path: string, init: RequestInit = {}) =>
-	call(path, {
-		...init,
-		headers: { ...(init.headers ?? {}), cookie },
-	});
+const as = (
+	cookie: string,
+	path: string,
+	init: RequestInit = {},
+	overrides: Record<string, unknown> = {}
+) =>
+	call(
+		path,
+		{
+			...init,
+			headers: { ...(init.headers ?? {}), cookie },
+		},
+		overrides
+	);
 
 beforeEach(() => {
 	db = migratedTestDatabase();
@@ -128,6 +141,49 @@ describe('POST /session', () => {
 		expect(response.status).toBe(401);
 		expect((await json<ErrorBody>(response)).code).toBe(
 			'JWT_VERIFICATION_FAILED'
+		);
+	});
+});
+
+describe('the sliding session', () => {
+	const MONTH_IN_SECONDS = 720 * 60 * 60;
+	const inAnHour = () => new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+	it('sends the cookie again when it extends the session', async () => {
+		const cookie = signIn(MEMBER, 'member', inAnHour());
+		const response = await as(
+			cookie,
+			'/me',
+			{},
+			{ SESSION_DURATION_HOURS: '720' }
+		);
+		expect(response.status).toBe(200);
+		expect(response.headers.get('set-cookie')).toMatch(
+			new RegExp(`__session=token-member;.*Max-Age=${MONTH_IN_SECONDS}`)
+		);
+		const { expires_at } = db.raw
+			.prepare(`SELECT expires_at FROM sessions`)
+			.get() as { expires_at: string };
+		expect(Date.parse(`${expires_at.replace(' ', 'T')}Z`)).toBeGreaterThan(
+			Date.now() + 700 * 60 * 60 * 1000
+		);
+	});
+
+	it('leaves the cookie alone while the session is young', async () => {
+		const response = await as(signIn(MEMBER, 'member'), '/me');
+		expect(response.headers.get('set-cookie')).toBeNull();
+	});
+
+	it('renews the cookie of a session POST /session answers as it is', async () => {
+		const response = await as(
+			signIn(MEMBER, 'member'),
+			'/session',
+			{ method: 'POST' },
+			{ SESSION_DURATION_HOURS: '720' }
+		);
+		expect(response.status).toBe(200);
+		expect(response.headers.get('set-cookie')).toMatch(
+			new RegExp(`__session=token-member;.*Max-Age=${MONTH_IN_SECONDS}`)
 		);
 	});
 });

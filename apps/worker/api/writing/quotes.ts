@@ -13,8 +13,10 @@ import {
 	getQuoteById,
 	updateQuote,
 	deleteQuote,
+	withQuoteSources,
 } from '@alexandria/core';
 import { requireAuth } from '../auth.js';
+import { includesSources } from './sources.js';
 
 const app = new Hono<{
 	Bindings: Env;
@@ -53,7 +55,11 @@ app.get('/', requireAuth(), async (c) => {
 			},
 			userId
 		);
-		return c.json({ quotes });
+		return c.json({
+			quotes: includesSources(c)
+				? await withQuoteSources(db, quotes, userId)
+				: quotes,
+		});
 	} catch (error) {
 		console.error('GET /quotes error:', error);
 		return c.json({ error: 'Internal server error' }, 500);
@@ -74,7 +80,8 @@ app.get('/:id', requireAuth(), async (c) => {
 		if (!quote) {
 			return c.json({ error: 'Quote not found' }, 404);
 		}
-		return c.json({ quote });
+		const [withSources] = await withQuoteSources(db, [quote], userId);
+		return c.json({ quote: withSources });
 	} catch (error) {
 		console.error('GET /quotes/:id error:', error);
 		return c.json({ error: 'Internal server error' }, 500);
@@ -107,7 +114,8 @@ app.post('/', requireAuth(), async (c) => {
 		const userId = c.get('authContext')!.user.id;
 		const connections: ConnectionInput[] | undefined = body.connections;
 		const quote = await createQuote(db, result.data, connections, userId);
-		return c.json({ ok: true, quote }, 201);
+		const [withSources] = await withQuoteSources(db, [quote], userId);
+		return c.json({ ok: true, quote: withSources }, 201);
 	} catch (error) {
 		console.error('POST /quotes error:', error);
 		return c.json({ error: 'Internal server error' }, 500);
