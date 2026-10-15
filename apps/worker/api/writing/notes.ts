@@ -15,6 +15,7 @@ import {
 	getNoteById,
 	updateNote,
 	deleteNote,
+	withNoteSources,
 } from '@alexandria/core';
 import type { NoteQueryFilters, NoteSort } from '@alexandria/core';
 import { requireAuth } from '../auth.js';
@@ -74,7 +75,10 @@ app.get('/', requireAuth(), async (c) => {
 			},
 			userId
 		);
-		return c.json({ notes: data, hasMore });
+		return c.json({
+			notes: await withNoteSources(db, data, userId),
+			hasMore,
+		});
 	} catch (error) {
 		console.error('GET /notes error:', error);
 		return c.json({ error: 'Internal server error' }, 500);
@@ -111,7 +115,10 @@ app.get('/shuffle', requireAuth(), async (c) => {
 	const count = Number(c.req.query('count')) || 5;
 	try {
 		const { data, total } = await getShuffleNotes(db, { count }, userId);
-		return c.json({ notes: data, total });
+		return c.json({
+			notes: await withNoteSources(db, data, userId),
+			total,
+		});
 	} catch (error) {
 		console.error('GET /notes/shuffle error:', error);
 		return c.json({ error: 'Internal server error' }, 500);
@@ -132,7 +139,8 @@ app.get('/:id', requireAuth(), async (c) => {
 		if (!note) {
 			return c.json({ error: 'Note not found' }, 404);
 		}
-		return c.json({ note });
+		const [withSources] = await withNoteSources(db, [note], userId);
+		return c.json({ note: withSources });
 	} catch (error) {
 		console.error('GET /notes/:id error:', error);
 		return c.json({ error: 'Internal server error' }, 500);
@@ -165,7 +173,8 @@ app.post('/', requireAuth(), async (c) => {
 		const userId = c.get('authContext')!.user.id;
 		const connections: ConnectionInput[] | undefined = body.connections;
 		const note = await createNote(db, result.data, connections, userId);
-		return c.json({ ok: true, note }, 201);
+		const [withSources] = await withNoteSources(db, [note], userId);
+		return c.json({ ok: true, note: withSources }, 201);
 	} catch (error) {
 		console.error('POST /notes error:', error);
 		return c.json({ error: 'Internal server error' }, 500);

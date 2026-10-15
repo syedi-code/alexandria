@@ -5,6 +5,7 @@
  */
 export * from './schema.js';
 export * from './notes.js';
+export * from './note-sources.js';
 export * from './quotes.js';
 export * from './essays.js';
 export * from './essay-images.js';
