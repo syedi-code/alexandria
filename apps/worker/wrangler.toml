@@ -49,6 +49,9 @@ database_name = "alexandria-search"
 database_id = "8167ef4a-1f28-4d1c-870d-2f0c51e06887"
 
 [vars]
+# A reader stays signed in while active; the window slides (api/auth.ts).
+SESSION_DURATION_HOURS = "720"
+
 # TEAM_DOMAIN, POLICY_AUD, and ADMIN_EMAIL are set as secrets:
 #   npx wrangler secret put TEAM_DOMAIN
 #   npx wrangler secret put POLICY_AUD
@@ -103,6 +106,8 @@ database_name = "alexandria-search-staging"
 database_id = "8d7a1231-0961-496e-898a-f8ccb2aa950b"
 
 [env.staging.vars]
+SESSION_DURATION_HOURS = "720"
+
 # TEAM_DOMAIN, POLICY_AUD, and ADMIN_EMAIL are set as secrets:
 #   cd apps/worker
 #   npx wrangler secret put TEAM_DOMAIN --env staging
