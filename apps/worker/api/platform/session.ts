@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
+import { deleteCookie, getCookie } from 'hono/cookie';
 import type { Env, AuthContext } from '@alexandria/core';
 import {
 	adoptGuest,
@@ -18,6 +18,7 @@ import { apiContract } from '@alexandria/core';
 import {
 	isLocalDev,
 	localDevIdentity,
+	setSessionCookie,
 	verifyJwtAndGetIdentity,
 } from '../auth.js';
 import { passedTurnstile } from './turnstile.js';
@@ -55,6 +56,11 @@ sessionRoutes.post('/session', async (c) => {
 		: null;
 	const guest = existing?.is_guest === 1 ? existing : null;
 	if (existing && !(guest && jwtToken)) {
+		setSessionCookie(
+			c,
+			existing.token,
+			sessionDurationHours(c.env.SESSION_DURATION_HOURS)
+		);
 		return c.json(
 			{
 				user: { id: existing.user_id, email: existing.email },
@@ -119,13 +125,7 @@ sessionRoutes.post('/session', async (c) => {
 		});
 
 		// Set session cookie
-		setCookie(c, '__session', session.token, {
-			path: '/api',
-			httpOnly: true,
-			secure: !isLocalDev(c),
-			sameSite: 'Lax',
-			maxAge: durationHours * 60 * 60,
-		});
+		setSessionCookie(c, session.token, durationHours);
 
 		return c.json(
 			{
@@ -167,6 +167,11 @@ sessionRoutes.post('/session/guest', async (c) => {
 	const held = getCookie(c, '__session');
 	const existing = held ? await getSessionByToken(db, held) : null;
 	if (existing) {
+		setSessionCookie(
+			c,
+			existing.token,
+			sessionDurationHours(c.env.SESSION_DURATION_HOURS)
+		);
 		return c.json({
 			user: { id: existing.user_id, email: existing.email },
 			role: existing.role,
@@ -214,13 +219,7 @@ sessionRoutes.post('/session/guest', async (c) => {
 		role: 'member',
 		durationHours,
 	});
-	setCookie(c, '__session', session.token, {
-		path: '/api',
-		httpOnly: true,
-		secure: !isLocalDev(c),
-		sameSite: 'Lax',
-		maxAge: durationHours * 60 * 60,
-	});
+	setSessionCookie(c, session.token, durationHours);
 	return c.json(
 		{
 			user: { id, email },

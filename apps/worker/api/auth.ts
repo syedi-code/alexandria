@@ -5,8 +5,8 @@ import type {
 	JWTPayload,
 	GetKeyFunction,
 } from 'jose';
-import type { MiddlewareHandler } from 'hono';
-import { getCookie } from 'hono/cookie';
+import type { Context, MiddlewareHandler } from 'hono';
+import { getCookie, setCookie } from 'hono/cookie';
 import {
 	getSessionByToken,
 	extendSession,
@@ -105,6 +105,25 @@ export function isLocalDev(c: { env: Env }): boolean {
 	return c.env.LOCAL_DEV === 'true';
 }
 
+/**
+ * The cookie is sent again whenever the session is extended. Its max-age is
+ * otherwise fixed at sign-in, so the browser dropped a session D1 had kept
+ * alive, and an active reader was signed out one duration after signing in.
+ */
+export function setSessionCookie<E extends { Bindings: Env }>(
+	c: Context<E>,
+	token: string,
+	durationHours: number
+): void {
+	setCookie(c, '__session', token, {
+		path: '/api',
+		httpOnly: true,
+		secure: !isLocalDev(c),
+		sameSite: 'Lax',
+		maxAge: durationHours * 60 * 60,
+	});
+}
+
 export const LOCAL_DEV_USER_ID = '00000000-0000-4000-8000-000000000000';
 
 export const localDevIdentity = (env: Env) => ({
@@ -178,6 +197,7 @@ export function sessionMiddleware(): MiddlewareHandler<AppEnv> {
 		if (sessionNeedsExtending(session.expires_at, durationHours)) {
 			try {
 				await extendSession(c.env.DB, sessionToken, durationHours);
+				setSessionCookie(c, sessionToken, durationHours);
 			} catch (error) {
 				console.error('[auth] session extend failed', error);
 			}
