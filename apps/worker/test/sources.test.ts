@@ -95,9 +95,20 @@ async function seed() {
 }
 
 describe('notes carry their sources', () => {
+	it('only when a list asks for them', async () => {
+		await seed();
+		const { notes } = (await (await call('/notes')).json()) as {
+			notes: NoteBody[];
+		};
+		expect(notes).toHaveLength(3);
+		for (const note of notes) expect(note).not.toHaveProperty('book');
+	});
+
 	it('in the list: the book, else the connected author, else neither', async () => {
 		const { author, book } = await seed();
-		const { notes } = (await (await call('/notes')).json()) as {
+		const { notes } = (await (
+			await call('/notes?include=sources')
+		).json()) as {
 			notes: NoteBody[];
 		};
 		const byId = new Map(notes.map((n) => [n.id, n]));
@@ -122,7 +133,7 @@ describe('notes carry their sources', () => {
 		const { book } = await seed();
 
 		const { notes } = (await (
-			await call('/notes/shuffle?count=5')
+			await call('/notes/shuffle?count=5&include=sources')
 		).json()) as {
 			notes: NoteBody[];
 		};
@@ -150,5 +161,54 @@ describe('notes carry their sources', () => {
 			note: NoteBody;
 		};
 		expect(note.book?.id).toBe(book.id);
+	});
+});
+
+describe('quotes carry their sources', () => {
+	it('the book, else the connected author unless the quote names its creator', async () => {
+		const { author, book } = await seed();
+		await post('/quotes', {
+			id: 'quote-book',
+			quote: 'Each generation must discover its mission.',
+			book_id: book.id,
+		});
+		const link = {
+			a_type: 'quote',
+			a_id: 'quote-author',
+			b_type: 'author',
+			b_id: author.id,
+		};
+		await post('/quotes', {
+			id: 'quote-author',
+			quote: 'O my body, make of me always a man who questions!',
+			connections: [link],
+		});
+		await post('/quotes', {
+			id: 'quote-named',
+			quote: 'Imagination is more important than knowledge.',
+			creator: 'Albert Einstein',
+			connections: [{ ...link, a_id: 'quote-named' }],
+		});
+
+		const { quotes } = (await (
+			await call('/quotes?include=sources')
+		).json()) as { quotes: NoteBody[] };
+		const byId = new Map(quotes.map((q) => [q.id, q]));
+		expect(byId.get('quote-book')?.book?.id).toBe(book.id);
+		expect(byId.get('quote-author')?.author?.name).toBe('Frantz Fanon');
+		expect(byId.get('quote-named')).toMatchObject({
+			book: null,
+			author: null,
+		});
+
+		const { quote } = (await (
+			await call('/quotes/quote-author')
+		).json()) as { quote: NoteBody };
+		expect(quote.author?.id).toBe(author.id);
+
+		const plain = (await (await call('/quotes')).json()) as {
+			quotes: NoteBody[];
+		};
+		expect(plain.quotes[0]).not.toHaveProperty('book');
 	});
 });

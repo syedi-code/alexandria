@@ -19,6 +19,7 @@ import {
 } from '@alexandria/core';
 import type { NoteQueryFilters, NoteSort } from '@alexandria/core';
 import { requireAuth } from '../auth.js';
+import { includesSources } from './sources.js';
 
 const NOTE_SORTS = new Set<NoteSort>(['newest', 'oldest', 'edited']);
 
@@ -76,7 +77,9 @@ app.get('/', requireAuth(), async (c) => {
 			userId
 		);
 		return c.json({
-			notes: await withNoteSources(db, data, userId),
+			notes: includesSources(c)
+				? await withNoteSources(db, data, userId)
+				: data,
 			hasMore,
 		});
 	} catch (error) {
@@ -116,7 +119,9 @@ app.get('/shuffle', requireAuth(), async (c) => {
 	try {
 		const { data, total } = await getShuffleNotes(db, { count }, userId);
 		return c.json({
-			notes: await withNoteSources(db, data, userId),
+			notes: includesSources(c)
+				? await withNoteSources(db, data, userId)
+				: data,
 			total,
 		});
 	} catch (error) {
