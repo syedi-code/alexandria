@@ -157,9 +157,31 @@ describe('messages', () => {
 
 		expect(await listMessages(db.d1, ids.userAdmin, id)).toEqual([
 			question,
-			answer,
+			{ ...answer, metadata: { model_id: 'm' } },
 		]);
 		expect(await listMessages(db.d1, ids.userOther, id)).toEqual([]);
+	});
+
+	// scribe#60: a conversation opened later had lost the name of the model
+	// that wrote each answer, and the reader saw an answer signed by nobody.
+	it('say which model wrote each answer, and nothing for a question', async () => {
+		const { id } = await createConversation(db.d1, ids.userAdmin, {
+			model_id: 'claude-sonnet-5',
+		});
+		await saveMessage(db.d1, {
+			conversationId: id,
+			message: text('q', 'user', 'Why?'),
+		});
+		await saveMessage(db.d1, {
+			conversationId: id,
+			message: text('a1', 'assistant', 'Because.'),
+			modelId: 'gpt-5.6-luna',
+		});
+
+		const [question, answer] = await listMessages(db.d1, ids.userAdmin, id);
+		expect(question).not.toHaveProperty('metadata');
+		// The answer's own model, not the conversation's.
+		expect(answer.metadata).toEqual({ model_id: 'gpt-5.6-luna' });
 	});
 
 	it('replace an answer that is saved again, citations included', async () => {
