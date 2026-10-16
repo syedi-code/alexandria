@@ -1,4 +1,6 @@
+import dotenv from 'dotenv';
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -67,20 +69,123 @@ function apiError(stdout: string): string | null {
 	}
 }
 
+const DOT_ENV: Record<string, string> = (() => {
+	try {
+		return dotenv.parse(
+			readFileSync(path.resolve(WORKER_DIR, '../../.env'))
+		);
+	} catch {
+		return {};
+	}
+})();
+
+/**
+ * Which credential wrangler gets. Wrangler prefers CLOUDFLARE_API_TOKEN over
+ * its login, and the scripts load `.env`, whose CLOUDFLARE_API_TOKEN is the
+ * Access/Turnstile token — no D1 scope, and it expires. Passed through, every
+ * query failed with 7403 while the login itself was fine. So `.env`'s copy is
+ * never used here; CI's (set in the real environment) still is.
+ */
+const CREDENTIAL = (() => {
+	const cli =
+		process.env.ALEXANDRIA_CLI_TOKEN ?? DOT_ENV.ALEXANDRIA_CLI_TOKEN;
+	if (cli) return { name: 'ALEXANDRIA_CLI_TOKEN', token: cli };
+	const ambient = process.env.CLOUDFLARE_API_TOKEN;
+	if (ambient && ambient !== DOT_ENV.CLOUDFLARE_API_TOKEN)
+		return { name: 'CLOUDFLARE_API_TOKEN', token: ambient };
+	return null;
+})();
+
+const ACCOUNT_ID =
+	process.env.CLOUDFLARE_ACCOUNT_ID ?? DOT_ENV.CLOUDFLARE_ACCOUNT_ID;
+
+const NEEDS = 'D1 Edit and Workers R2 Storage Edit, with no expiry';
+
+function wranglerEnv(): NodeJS.ProcessEnv {
+	const env = { ...process.env };
+	delete env.CLOUDFLARE_API_TOKEN;
+	if (CREDENTIAL) env.CLOUDFLARE_API_TOKEN = CREDENTIAL.token;
+	if (ACCOUNT_ID) env.CLOUDFLARE_ACCOUNT_ID = ACCOUNT_ID;
+	return env;
+}
+
+/**
+ * A credential problem is one line and exit code 1, never a stack trace. The
+ * exit waits a tick: process.exit() straight after fetch() trips a libuv
+ * assertion on Windows. The promise never settles, so nothing runs meanwhile.
+ */
+function refuse(reason: string): Promise<never> {
+	const fix = CREDENTIAL
+		? `${CREDENTIAL.name} needs ${NEEDS} — dash.cloudflare.com/profile/api-tokens`
+		: `set ALEXANDRIA_CLI_TOKEN in .env (${NEEDS}) — dash.cloudflare.com/profile/api-tokens`;
+	console.error(`Cloudflare auth failed: ${reason}. Fix: ${fix}`);
+	setTimeout(() => process.exit(1), 50);
+	return new Promise(() => {});
+}
+
+let verified: Promise<void> | undefined;
+
+/** Checks the token once per run, so an expired one says so before any query. */
+function verifyToken(): Promise<void> {
+	if (!CREDENTIAL) return Promise.resolve();
+	verified ??= (async () => {
+		const scopes = ['user', ACCOUNT_ID && `accounts/${ACCOUNT_ID}`];
+		for (const scope of scopes.filter(Boolean)) {
+			const response = await fetch(
+				`https://api.cloudflare.com/client/v4/${scope}/tokens/verify`,
+				{ headers: { Authorization: `Bearer ${CREDENTIAL.token}` } }
+			).catch(() => null);
+			if (!response) return; // offline: let wrangler say what is wrong
+			const body = (await response.json().catch(() => ({}))) as {
+				result?: { status?: string; expires_on?: string };
+			};
+			const { status, expires_on } = body.result ?? {};
+			if (status === 'active') return;
+			if (status === 'expired')
+				return refuse(
+					`${CREDENTIAL.name} expired on ${expires_on?.slice(0, 10)}`
+				);
+			if (status) return refuse(`${CREDENTIAL.name} is ${status}`);
+		}
+		return refuse(`${CREDENTIAL.name} is not a valid token`);
+	})();
+	return verified;
+}
+
+const AUTH_CODES = new Set([7403, 9106, 9109, 10000, 10001]);
+
 async function wrangler(args: string[]): Promise<string> {
+	const remote = args.includes('--remote');
+	if (remote) await verifyToken();
 	try {
 		const { stdout } = await run(process.execPath, [WRANGLER, ...args], {
 			cwd: WORKER_DIR,
+			env: wranglerEnv(),
 			maxBuffer: 512 * 1024 * 1024,
 		});
 		return stdout;
 	} catch (error) {
 		const stdout = (error as { stdout?: string }).stdout ?? '';
+		const output = stdout + ((error as { stderr?: string }).stderr ?? '');
 		const reported = apiError(stdout);
+		if (
+			remote &&
+			(AUTH_CODES.has(apiCode(stdout)) ||
+				/not logged in|authentication error/i.test(output))
+		)
+			return refuse(reported ?? 'wrangler is not logged in');
 		if (!reported) throw error;
 		throw new Error(`wrangler ${args[0]} ${args[1]}: ${reported}`, {
 			cause: error,
 		});
+	}
+}
+
+function apiCode(stdout: string): number {
+	try {
+		return JSON.parse(stdout.slice(stdout.search(/^{/m))).error.code;
+	} catch {
+		return 0;
 	}
 }
 
