@@ -139,6 +139,7 @@ async function main(): Promise<void> {
 		FROM essay_references er
 		INNER JOIN essays e ON e.id = er.essay_id
 		WHERE e.user_id = ?
+		  AND e.id NOT IN (SELECT replaces FROM essays WHERE replaces IS NOT NULL)
 		ORDER BY er.essay_id, er.position
 		`,
 		params: [userId],

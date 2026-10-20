@@ -22,6 +22,7 @@ import dotenv from 'dotenv';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { isEnvironment, query, type Environment } from '../wrangler.js';
+import { latestIds, latestRevisions, type VersionLink } from './latest.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -140,10 +141,46 @@ async function main(): Promise<void> {
 		params: [userId],
 	});
 
+	// An item may name an earlier version; point it at the latest one.
+	const links = await query<VersionLink & { entity_type: string }>(
+		env,
+		'db',
+		{
+			sql: `
+		SELECT 'note' AS entity_type, id, replaces FROM notes WHERE user_id = ? AND replaces IS NOT NULL
+		UNION ALL
+		SELECT 'quote', id, replaces FROM quotes WHERE user_id = ? AND replaces IS NOT NULL
+		UNION ALL
+		SELECT 'essay', id, replaces FROM essays WHERE user_id = ? AND replaces IS NOT NULL
+		`,
+			params: [userId, userId, userId],
+		}
+	);
+	const thoughts = await query<{
+		id: string;
+		content: string;
+		created_at: string;
+	}>(env, 'db', {
+		sql: 'SELECT id, content, created_at FROM thoughts WHERE user_id = ?',
+		params: [userId],
+	});
+	const latestOf: Record<string, Map<string, string>> = {
+		thought: latestRevisions(thoughts).latestOf,
+	};
+	for (const type of ['note', 'quote', 'essay']) {
+		latestOf[type] = latestIds(links.filter((l) => l.entity_type === type));
+	}
+
 	const itemsByThread = new Map<string, ThreadItemRow[]>();
 	for (const item of items) {
 		const list = itemsByThread.get(item.thread_id) ?? [];
-		list.push(item);
+		const entity_id =
+			latestOf[item.entity_type]?.get(item.entity_id) ?? item.entity_id;
+		const already = list.some(
+			(i) =>
+				i.entity_type === item.entity_type && i.entity_id === entity_id
+		);
+		if (!already) list.push({ ...item, entity_id });
 		itemsByThread.set(item.thread_id, list);
 	}
 
@@ -162,8 +199,9 @@ async function main(): Promise<void> {
 		: extracted.map((r) => JSON.stringify(r)).join('\n');
 
 	writeFileSync(outFile, content);
+	const kept = extracted.reduce((n, t) => n + t.items.length, 0);
 	console.log(
-		`Extracted ${threads.length} threads (${items.length} items) to ${outFile}`
+		`Extracted ${threads.length} threads (${kept} items) to ${outFile}`
 	);
 }
 
