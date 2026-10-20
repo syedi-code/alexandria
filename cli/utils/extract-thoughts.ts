@@ -23,6 +23,7 @@ import dotenv from 'dotenv';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { isEnvironment, query, type Environment } from '../wrangler.js';
+import { latestRevisions } from './latest.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -127,7 +128,10 @@ async function main(): Promise<void> {
 		params: [userId],
 	});
 
-	const extracted = results.map((r) => {
+	// A thought has no version link; earlier drafts are recognised by wording.
+	const { latest, latestOf } = latestRevisions(results);
+
+	const extracted = latest.map((r) => {
 		if (compact) {
 			return { content: r.content, created_at: r.created_at };
 		}
@@ -151,7 +155,9 @@ async function main(): Promise<void> {
 		: extracted.map((r) => JSON.stringify(r)).join('\n');
 
 	writeFileSync(outFile, content);
-	console.log(`Extracted ${extracted.length} thoughts to ${outFile}`);
+	console.log(
+		`Extracted ${extracted.length} thoughts (${latestOf.size} earlier drafts left out) to ${outFile}`
+	);
 }
 
 main().catch((e) => {
